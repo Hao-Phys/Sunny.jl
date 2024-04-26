@@ -79,6 +79,7 @@ include("SpinWaveTheory/HamiltonianSUN.jl")
 include("SpinWaveTheory/DispersionAndIntensities.jl")
 include("SpinWaveTheory/Lanczos.jl")
 include("SpinWaveTheory/LSWTCorrections.jl")
+include("SpinWaveTheory/TwoParticleContinuum.jl")
 export SpinWaveTheory, dispersion, dssf, delta_function_kernel
 
 include("SampledCorrelations/SampledCorrelations.jl")
