@@ -106,10 +106,8 @@ function dssf_tc(swt::SpinWaveTheory, q, ωs, η::Float64; opts...)
         for (iω, ω) in enumerate(ωs)
             for (ci, i) in observables.correlations
                 (α, β) = ci.I
-                for band1 = 1:L
-                    for band2 = 1:L
-                        corrs_buf[(iω-1)*num_corrs+i] += Avec[α, band1, band2] * conj(Avec[β, band1, band2]) * lorentzian(ω-disp1[band1]-disp2[band2], η) / Ncells
-                    end
+                for band1 in 1:L, band2 in 1:L
+                    corrs_buf[(iω-1)*num_corrs+i] += Avec[α, band1, band2] * conj(Avec[β, band1, band2]) * lorentzian(ω-disp1[band1]-disp2[band2], η) / Ncells
                 end
             end
         end
