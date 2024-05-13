@@ -76,10 +76,10 @@ function calculate_real_space_quartic_vertices(swt::SpinWaveTheory)
             V43_buf .= 0.0
 
             for (A, B) in coupling.general.data
-                for σ1 in 1:N-1, σ2 in 1:N-1, σ3 in 1:N-1
+                for σ1 in 1:N-1, σ3 in 1:N-1
                     V42_buf[σ1, σ3] += -0.5 * A[N, σ1] * B[N, σ3]
                     V43_buf[σ1, σ3] += -0.5 * A[σ1, N] * B[N, σ3]
-                    for σ4 in 1:N-1
+                    for σ2 in 1:N-1, σ4 in 1:N-1
                         V41_buf[σ1, σ2, σ3, σ4] += (A[σ1, σ2] - δ(σ1, σ2)*A[N, N]) * (B[σ3, σ4] - δ(σ3, σ4)*B[N, N])
                     end
                 end
