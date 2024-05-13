@@ -24,7 +24,7 @@ function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     phase1 = φ4([-q₁, -q₂, q₃, q₄], φas, bond.n)
     phase2 = φ4([-q₁, -q₃, q₂, q₄], φas, bond.n)
     phase3 = φ4([-q₁, -q₄, q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, -q₂, q₁, q₂], φas, bond.n)
+    phase4 = φ4([-q₃, -q₂, q₁, q₄], φas, bond.n)
     phase5 = φ4([-q₄, -q₂, q₃, q₁], φas, bond.n)
     phase6 = φ4([-q₃, -q₄, q₁, q₂], φas, bond.n)
 
@@ -39,7 +39,7 @@ function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
         conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
         Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
         Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₄]) * phase6 
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
@@ -58,7 +58,7 @@ function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     phase1 = φ4([-q₁, q₂, q₃, q₄], φas, bond.n)
     phase2 = φ4([-q₁, q₃, q₂, q₄], φas, bond.n)
     phase3 = φ4([-q₁, q₄, q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, q₂, q₁, q₂], φas, bond.n)
+    phase4 = φ4([-q₃, q₂, q₁, q₄], φas, bond.n)
     phase5 = φ4([-q₄, q₂, q₃, q₁], φas, bond.n)
     phase6 = φ4([-q₃, q₄, q₁, q₂], φas, bond.n)
 
@@ -73,7 +73,7 @@ function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
         conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
         Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂+L, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
         Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂+L, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₄]) * phase6 
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
@@ -92,7 +92,7 @@ function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     phase1 = φ4([-q₁, -q₂, -q₃, q₄], φas, bond.n)
     phase2 = φ4([-q₁, -q₃, -q₂, q₄], φas, bond.n)
     phase3 = φ4([-q₁, -q₄, -q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, -q₂, -q₁, q₂], φas, bond.n)
+    phase4 = φ4([-q₃, -q₂, -q₁, q₄], φas, bond.n)
     phase5 = φ4([-q₄, -q₂, -q₃, q₁], φas, bond.n)
     phase6 = φ4([-q₃, -q₄, -q₁, q₂], φas, bond.n)
 
@@ -107,7 +107,7 @@ function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
         conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
         Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
         Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₄]) * phase6 
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
