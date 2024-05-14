@@ -2,18 +2,24 @@ struct TwoParticleState
     q1 :: Vec3
     q2 :: Vec3
     qcom :: Vec3
-    q1_index :: CartesianIndex
-    q2_index :: CartesianIndex
-    qcom_index :: CartesianIndex
+    q1_carts_index :: CartesianIndex
+    q2_carts_index :: CartesianIndex
+    qcom_carts_index :: CartesianIndex
+    q1_linear_index :: Int
+    q2_linear_index :: Int
+    qcom_linear_index :: Int
     band1 :: Int
     band2 :: Int
-    two_particle_basis_index :: Int
+    global_index_i :: Int
+    global_index_j :: Int
+    com_index :: Int
     ζ :: Float64
 end
 
 function generate_two_particle_basis(cluster_size::NTuple{3, Int}, numbands::Int)
     Nu1, Nu2, Nu3 = cluster_size
     qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
+    qs_linear_indices = LinearIndices(qs)
     cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3, 1:numbands))
     linear_indices = LinearIndices(cartes_indices)
 
@@ -24,17 +30,20 @@ function generate_two_particle_basis(cluster_size::NTuple{3, Int}, numbands::Int
         i = linear_indices[ci]
         j = linear_indices[cj]
         if i ≤ j
-            q1_index = CartesianIndex(ci[1], ci[2], ci[3])
-            q2_index = CartesianIndex(cj[1], cj[2], cj[3])
-            q1 = qs[q1_index]
-            q2 = qs[q2_index]
+            q1_carts_index = CartesianIndex(ci[1], ci[2], ci[3])
+            q2_carts_index = CartesianIndex(cj[1], cj[2], cj[3])
+            q1_linear_index = qs_linear_indices[q1_carts_index]
+            q2_linear_index = qs_linear_indices[q2_carts_index]
+            q1 = qs[q1_carts_index]
+            q2 = qs[q2_carts_index]
             qcom = mod.(q1+q2, 1.0)
-            qcom_index = findfirst(x -> x ≈ qcom, qs)
+            qcom_carts_index = findfirst(x -> x ≈ qcom, qs)
+            qcom_linear_index = qs_linear_indices[qcom_carts_index]
 
-            tp_counts[qcom_index] += 1
+            tp_counts[qcom_carts_index] += 1
             ζ = i == j ? 1/√2 : 1.0
-            tp_state = TwoParticleState(Vec3(q1), Vec3(q2), Vec3(qcom), q1_index, q2_index, qcom_index, ci[4], cj[4], tp_counts[qcom_index], ζ)
-            push!(tp_states[qcom_index], tp_state)
+            tp_state = TwoParticleState(Vec3(q1), Vec3(q2), Vec3(qcom), q1_carts_index, q2_carts_index, qcom_carts_index, q1_linear_index, q2_linear_index, qcom_linear_index, ci[4], cj[4], i, j, tp_counts[qcom_carts_index], ζ)
+            push!(tp_states[qcom_carts_index], tp_state)
         end
     end
 
@@ -54,7 +63,6 @@ struct NonPerturbativeTheory
     two_particle_states :: Array{Vector{TwoParticleState}, 3}
     Es :: Array{Float64, 4}
     Vps :: Array{ComplexF64, 5}
-    Vms :: Array{ComplexF64, 5}
     real_space_quartic_vertices :: Vector{RealSpaceQuarticVertices}
 end
 
@@ -115,13 +123,10 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
         E = bogoliubov!(V_buf, H_buf)
         Es[:, iq] = E
         Vps[:, :, iq] = deepcopy(V_buf)
-        swt_hamiltonian_SUN!(H_buf, swt, Vec3(-q))
-        bogoliubov!(V_buf, H_buf)
-        Vms[:, :, iq] = deepcopy(V_buf)
     end
 
     real_space_quartic_vertices = calculate_real_space_quartic_vertices(swt)
 
-    return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, Vms, real_space_quartic_vertices)
+    return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, real_space_quartic_vertices)
 
 end

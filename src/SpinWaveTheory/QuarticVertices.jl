@@ -11,8 +11,7 @@ end
 # (N-1) × (N-1) × (N-1) × (N-1) × L × L × L × L array
 function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U41_buf .= 0.0
-
-    (; swt, Vps, Vms) = npt
+    (; swt, Vps) = npt
     N = swt.sys.Ns[1]
     nflavors = N - 1
     L = nbands(swt)
@@ -21,32 +20,31 @@ function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     αs = [bond.i, bond.j]
     α₁, α₂, α₃, α₄ = αs[φas[1]+1], αs[φas[2]+1], αs[φas[3]+1], αs[φas[4]+1]
 
-    phase1 = φ4([-q₁, -q₂, q₃, q₄], φas, bond.n)
-    phase2 = φ4([-q₁, -q₃, q₂, q₄], φas, bond.n)
-    phase3 = φ4([-q₁, -q₄, q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, -q₂, q₁, q₄], φas, bond.n)
-    phase5 = φ4([-q₄, -q₂, q₃, q₁], φas, bond.n)
-    phase6 = φ4([-q₃, -q₄, q₁, q₂], φas, bond.n)
+    phase1 = φ4([q₁, q₂, q₃, q₄], φas, bond.n)
+    phase2 = φ4([q₁, q₃, q₂, q₄], φas, bond.n)
+    phase3 = φ4([q₁, q₄, q₃, q₂], φas, bond.n)
+    phase4 = φ4([q₃, q₂, q₁, q₄], φas, bond.n)
+    phase5 = φ4([q₄, q₂, q₃, q₁], φas, bond.n)
+    phase6 = φ4([q₃, q₄, q₁, q₂], φas, bond.n)
 
-    Vm1 = view(Vms, :, :, qs_indices[1])
-    Vm2 = view(Vms, :, :, qs_indices[2])
+    Vp1 = view(Vps, :, :, qs_indices[1])
+    Vp2 = view(Vps, :, :, qs_indices[2])
     Vp3 = view(Vps, :, :, qs_indices[3])
     Vp4 = view(Vps, :, :, qs_indices[4])
 
     for σ₁ in 1:nflavors, σ₂ in 1:nflavors, σ₃ in 1:nflavors, σ₄ in 1:nflavors, n₁ in 1:L, n₂ in 1:L, n₃ in 1:L, n₄ in 1:L
-        U41_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂+L, n₃] * conj(Vm2[(α₃-1)*nflavors+σ₃+L, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
-        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
+        U41_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂+L, n₃] * conj(Vp2[(α₃-1)*nflavors+σ₃+L, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vp1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
+        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vp1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vp1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
 function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U42_buf .= 0.0
-
-    (; swt, Vps, Vms) = npt
+    (; swt, Vps) = npt
     N = swt.sys.Ns[1]
     nflavors = N - 1
     L = nbands(swt)
@@ -55,32 +53,31 @@ function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     αs = [bond.i, bond.j]
     α₁, α₂, α₃, α₄ = αs[φas[1]+1], αs[φas[2]+1], αs[φas[3]+1], αs[φas[4]+1]
 
-    phase1 = φ4([-q₁, q₂, q₃, q₄], φas, bond.n)
-    phase2 = φ4([-q₁, q₃, q₂, q₄], φas, bond.n)
-    phase3 = φ4([-q₁, q₄, q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, q₂, q₁, q₄], φas, bond.n)
-    phase5 = φ4([-q₄, q₂, q₃, q₁], φas, bond.n)
-    phase6 = φ4([-q₃, q₄, q₁, q₂], φas, bond.n)
+    phase1 = φ4([q₁, q₂, q₃, q₄], φas, bond.n)
+    phase2 = φ4([q₁, q₃, q₂, q₄], φas, bond.n)
+    phase3 = φ4([q₁, q₄, q₃, q₂], φas, bond.n)
+    phase4 = φ4([q₃, q₂, q₁, q₄], φas, bond.n)
+    phase5 = φ4([q₄, q₂, q₃, q₁], φas, bond.n)
+    phase6 = φ4([q₃, q₄, q₁, q₂], φas, bond.n)
 
-    Vm1 = view(Vms, :, :, qs_indices[1])
-    Vm2 = view(Vms, :, :, qs_indices[2])
+    Vp1 = view(Vps, :, :, qs_indices[1])
+    Vp2 = view(Vps, :, :, qs_indices[2])
     Vp3 = view(Vps, :, :, qs_indices[3])
     Vp4 = view(Vps, :, :, qs_indices[4])
 
     for σ₁ in 1:nflavors, σ₂ in 1:nflavors, σ₃ in 1:nflavors, σ₄ in 1:nflavors, n₁ in 1:L, n₂ in 1:L, n₃ in 1:L, n₄ in 1:L
-        U42_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vm2[(α₂-1)*nflavors+σ₂+L, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂, n₃] * conj(Vm2[(α₃-1)*nflavors+σ₃+L, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂+L, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
-        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂+L, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
+        U42_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vp2[(α₂-1)*nflavors+σ₂+L, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂, n₃] * conj(Vp2[(α₃-1)*nflavors+σ₃+L, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂, n₄] * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vp2[(α₂-1)*nflavors+σ₂+L, n₂]) * conj(Vp1[(α₃-1)*nflavors+σ₃+L, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
+        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vp2[(α₂-1)*nflavors+σ₂+L, n₂]) * Vp3[(α₃-1)*nflavors+σ₃, n₃] * conj(Vp1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂, n₄] * conj(Vp1[(α₃-1)*nflavors+σ₃+L, n₁]) * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
 function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U43_buf .= 0.0
-
-    (; swt, Vps, Vms) = npt
+    (; swt, Vps) = npt
     N = swt.sys.Ns[1]
     nflavors = N - 1
     L = nbands(swt)
@@ -89,25 +86,25 @@ function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     αs = [bond.i, bond.j]
     α₁, α₂, α₃, α₄ = αs[φas[1]+1], αs[φas[2]+1], αs[φas[3]+1], αs[φas[4]+1]
 
-    phase1 = φ4([-q₁, -q₂, -q₃, q₄], φas, bond.n)
-    phase2 = φ4([-q₁, -q₃, -q₂, q₄], φas, bond.n)
-    phase3 = φ4([-q₁, -q₄, -q₃, q₂], φas, bond.n)
-    phase4 = φ4([-q₃, -q₂, -q₁, q₄], φas, bond.n)
-    phase5 = φ4([-q₄, -q₂, -q₃, q₁], φas, bond.n)
-    phase6 = φ4([-q₃, -q₄, -q₁, q₂], φas, bond.n)
+    phase1 = φ4([q₁, q₂, q₃, q₄], φas, bond.n)
+    phase2 = φ4([q₁, q₃, q₂, q₄], φas, bond.n)
+    phase3 = φ4([q₁, q₄, q₃, q₂], φas, bond.n)
+    phase4 = φ4([q₃, q₂, q₁, q₄], φas, bond.n)
+    phase5 = φ4([q₄, q₂, q₃, q₁], φas, bond.n)
+    phase6 = φ4([q₃, q₄, q₁, q₂], φas, bond.n)
 
-    Vm1 = view(Vms, :, :, qs_indices[1])
-    Vm2 = view(Vms, :, :, qs_indices[2])
+    Vp1 = view(Vps, :, :, qs_indices[1])
+    Vp2 = view(Vps, :, :, qs_indices[2])
     Vp3 = view(Vps, :, :, qs_indices[3])
     Vp4 = view(Vps, :, :, qs_indices[4])
 
     for σ₁ in 1:nflavors, σ₂ in 1:nflavors, σ₃ in 1:nflavors, σ₄ in 1:nflavors, n₁ in 1:L, n₂ in 1:L, n₃ in 1:L, n₄ in 1:L
-        U43_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂+L, n₃] * conj(Vm2[(α₃-1)*nflavors+σ₃, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
-        conj(Vm1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vm1[(α₃-1)*nflavors+σ₃, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
-        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vm2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vm1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
-        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vm1[(α₃-1)*nflavors+σ₃, n₁]) * conj(Vm2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
+        U43_buf[σ₁, σ₂, σ₃, σ₄, n₁, n₂, n₃, n₄] += conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase1 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp3[(α₂-1)*nflavors+σ₂+L, n₃] * conj(Vp2[(α₃-1)*nflavors+σ₃, n₂]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase2 +
+        conj(Vp1[(α₁-1)*nflavors+σ₁, n₁]) * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase3 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * conj(Vp1[(α₃-1)*nflavors+σ₃, n₁]) * Vp4[(α₄-1)*nflavors+σ₄, n₄] * phase4 +
+        Vp4[(α₁-1)*nflavors+σ₁+L, n₄] * conj(Vp2[(α₂-1)*nflavors+σ₂, n₂]) * Vp3[(α₃-1)*nflavors+σ₃+L, n₃] * conj(Vp1[(α₄-1)*nflavors+σ₄+L, n₁]) * phase5 +
+        Vp3[(α₁-1)*nflavors+σ₁+L, n₃] * Vp4[(α₂-1)*nflavors+σ₂+L, n₄] * conj(Vp1[(α₃-1)*nflavors+σ₃, n₁]) * conj(Vp2[(α₄-1)*nflavors+σ₄+L, n₂]) * phase6 
     end
 end
 
@@ -187,3 +184,25 @@ function quartic_vertex(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices
     return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
 end
 
+# function calculate_quartic_vertices(npt::NonPerturbativeTheory)
+#     (; swt, clustersize) = npt
+#     L = nbands(swt)
+#     Nu1, Nu2, Nu3 = clustersize
+#     qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
+#     cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3))
+#     linear_indices = LinearIndices(cartes_indices)
+
+#     numqs = Nu1*Nu2*Nu3
+
+#     ret = zeros(ComplexF64, L, L, L, L, numqs, numqs, numqs, numqs)
+
+#     for ci in cartes_indices, cj in cartes_indices, ck in cartes_indices, cl in cartes_indices
+#         i = linear_indices[ci]
+#         j = linear_indices[cj]
+#         k = linear_indices[ck]
+#         l = linear_indices[cl]
+#         view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex(npt, [qs[ci], qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
+#     end
+
+#     return ret
+# end
