@@ -184,25 +184,25 @@ function quartic_vertex(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices
     return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
 end
 
-# function calculate_quartic_vertices(npt::NonPerturbativeTheory)
-#     (; swt, clustersize) = npt
-#     L = nbands(swt)
-#     Nu1, Nu2, Nu3 = clustersize
-#     qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
-#     cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3))
-#     linear_indices = LinearIndices(cartes_indices)
+function calculate_quartic_vertices(npt::NonPerturbativeTheory)
+    (; swt, clustersize) = npt
+    L = nbands(swt)
+    Nu1, Nu2, Nu3 = clustersize
+    qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
+    cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3))
+    linear_indices = LinearIndices(cartes_indices)
 
-#     numqs = Nu1*Nu2*Nu3
+    numqs = Nu1*Nu2*Nu3
 
-#     ret = zeros(ComplexF64, L, L, L, L, numqs, numqs, numqs, numqs)
+    ret = zeros(ComplexF64, L, L, L, L, numqs, numqs, numqs, numqs)
 
-#     for ci in cartes_indices, cj in cartes_indices, ck in cartes_indices, cl in cartes_indices
-#         i = linear_indices[ci]
-#         j = linear_indices[cj]
-#         k = linear_indices[ck]
-#         l = linear_indices[cl]
-#         view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex(npt, [qs[ci], qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
-#     end
+    for ci in cartes_indices, cj in cartes_indices, ck in cartes_indices, cl in cartes_indices
+        i = linear_indices[ci]
+        j = linear_indices[cj]
+        k = linear_indices[ck]
+        l = linear_indices[cl]
+        view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
+    end
 
-#     return ret
-# end
+    return ret
+end
