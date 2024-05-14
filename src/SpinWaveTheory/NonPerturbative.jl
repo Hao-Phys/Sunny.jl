@@ -113,7 +113,6 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
 
     Es = zeros(L, Nu1, Nu2, Nu3)
     Vps = zeros(ComplexF64, 2L, 2L, Nu1, Nu2, Nu3)
-    Vms = zeros(ComplexF64, 2L, 2L, Nu1, Nu2, Nu3)
     H_buf = zeros(ComplexF64, 2L, 2L)
     V_buf = zeros(ComplexF64, 2L, 2L)
 
