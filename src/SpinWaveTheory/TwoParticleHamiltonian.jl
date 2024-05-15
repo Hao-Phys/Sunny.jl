@@ -20,7 +20,7 @@ function calculate_quartic_vertices(npt::NonPerturbativeTheory)
         if sys.mode == :SUN
             view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex_SUN(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
         else
-
+            view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex_dipole(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
         end
     end
 
