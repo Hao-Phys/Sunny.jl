@@ -147,12 +147,22 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     H_buf = zeros(ComplexF64, 2L, 2L)
     V_buf = zeros(ComplexF64, 2L, 2L)
 
-    for iq in CartesianIndices(qs)
-        q = qs[iq]
-        swt_hamiltonian_SUN!(H_buf, swt, Vec3(q))
-        E = bogoliubov!(V_buf, H_buf)
-        Es[:, iq] = E
-        Vps[:, :, iq] = deepcopy(V_buf)
+    if sys.mode == :SUN
+        for iq in CartesianIndices(qs)
+            q = qs[iq]
+            swt_hamiltonian_SUN!(H_buf, swt, Vec3(q))
+            E = bogoliubov!(V_buf, H_buf)
+            Es[:, iq] = E
+            Vps[:, :, iq] = deepcopy(V_buf)
+        end
+    else
+        for iq in CartesianIndices(qs)
+            q = qs[iq]
+            swt_hamiltonian_dipole!(H_buf, swt, Vec3(q))
+            E = bogoliubov!(V_buf, H_buf)
+            Es[:, iq] = E
+            Vps[:, :, iq] = deepcopy(V_buf)
+        end
     end
 
     if sys.mode == :SUN
