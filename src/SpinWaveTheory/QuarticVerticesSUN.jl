@@ -9,7 +9,7 @@ end
 
 # Given the `npt`, and a `pc`, and a series of `qs` and their indices `qs_indices`, and `φas` return to the quartic vertex
 # (N-1) × (N-1) × (N-1) × (N-1) × L × L × L × L array
-function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
+function quartic_U41_SUN!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U41_buf .= 0.0
     (; swt, Vps) = npt
     N = swt.sys.Ns[1]
@@ -42,7 +42,7 @@ function quartic_U41!(U41_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     end
 end
 
-function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
+function quartic_U42_SUN!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U42_buf .= 0.0
     (; swt, Vps) = npt
     N = swt.sys.Ns[1]
@@ -75,7 +75,7 @@ function quartic_U42!(U42_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     end
 end
 
-function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
+function quartic_U43_SUN!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     U43_buf .= 0.0
     (; swt, Vps) = npt
     N = swt.sys.Ns[1]
@@ -108,7 +108,7 @@ function quartic_U43!(U43_buf::Array{ComplexF64, 8}, npt::NonPerturbativeTheory,
     end
 end
 
-function quartic_U4_symmetrized(quartic_fun::Function, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
+function quartic_U4_symmetrized_SUN(quartic_fun::Function, npt::NonPerturbativeTheory, bond::Bond, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}}, φas::NTuple{4, Int})
     swt = npt.swt
     N = swt.sys.Ns[1]
     nflavors = N - 1
@@ -139,7 +139,7 @@ function quartic_U4_symmetrized(quartic_fun::Function, npt::NonPerturbativeTheor
     return U4
 end
 
-function quartic_vertex(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}})
+function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}})
     (; swt, real_space_quartic_vertices, clustersize) = npt
     L = nbands(npt.swt)
     sys = swt.sys
@@ -155,15 +155,15 @@ function quartic_vertex(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices
             U4_buf .= 0.0
             i += 1
 
-            U4_1 = quartic_U4_symmetrized(quartic_U41!, npt, bond, qs, qs_indices, (0, 1, 0, 1))
-            U4_2 = quartic_U4_symmetrized(quartic_U42!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
-            U4_3 = quartic_U4_symmetrized(quartic_U42!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
-            U4_4 = quartic_U4_symmetrized(quartic_U43!, npt, bond, qs, qs_indices, (1, 1, 0, 1))
-            U4_5 = quartic_U4_symmetrized(quartic_U43!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
-            U4_6 = quartic_U4_symmetrized(quartic_U41!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
-            U4_7 = quartic_U4_symmetrized(quartic_U41!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
-            U4_8 = quartic_U4_symmetrized(quartic_U41!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
-            U4_9 = quartic_U4_symmetrized(quartic_U41!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
+            U4_1 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 1, 0, 1))
+            U4_2 = quartic_U4_symmetrized_SUN(quartic_U42_SUN!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
+            U4_3 = quartic_U4_symmetrized_SUN(quartic_U42_SUN!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
+            U4_4 = quartic_U4_symmetrized_SUN(quartic_U43_SUN!, npt, bond, qs, qs_indices, (1, 1, 0, 1))
+            U4_5 = quartic_U4_symmetrized_SUN(quartic_U43_SUN!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
+            U4_6 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
+            U4_7 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
+            U4_8 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
+            U4_9 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
 
             V41 = real_space_quartic_vertices[i].V41
             V42 = real_space_quartic_vertices[i].V42
@@ -182,27 +182,4 @@ function quartic_vertex(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices
     end
 
     return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
-end
-
-function calculate_quartic_vertices(npt::NonPerturbativeTheory)
-    (; swt, clustersize) = npt
-    L = nbands(swt)
-    Nu1, Nu2, Nu3 = clustersize
-    qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
-    cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3))
-    linear_indices = LinearIndices(cartes_indices)
-
-    numqs = Nu1*Nu2*Nu3
-
-    ret = zeros(ComplexF64, L, L, L, L, numqs, numqs, numqs, numqs)
-
-    for ci in cartes_indices, cj in cartes_indices, ck in cartes_indices, cl in cartes_indices
-        i = linear_indices[ci]
-        j = linear_indices[cj]
-        k = linear_indices[ck]
-        l = linear_indices[cl]
-        view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
-    end
-
-    return ret
 end

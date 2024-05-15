@@ -51,10 +51,16 @@ function generate_two_particle_basis(cluster_size::NTuple{3, Int}, numbands::Int
 
 end
 
-struct RealSpaceQuarticVertices
+struct RealSpaceQuarticVerticesSUN
     V41 :: Array{ComplexF64, 4}
     V42 :: Array{ComplexF64, 2}
     V43 :: Array{ComplexF64, 2}
+end
+
+struct RealSpaceQuarticVerticesDipole
+    V41 :: ComplexF64
+    V42 :: ComplexF64
+    V43 :: ComplexF64
 end
 
 struct NonPerturbativeTheory
@@ -63,17 +69,16 @@ struct NonPerturbativeTheory
     two_particle_states :: Array{Vector{TwoParticleState}, 3}
     Es :: Array{Float64, 4}
     Vps :: Array{ComplexF64, 5}
-    real_space_quartic_vertices :: Vector{RealSpaceQuarticVertices}
+    real_space_quartic_vertices :: Vector{Union{RealSpaceQuarticVerticesSUN, RealSpaceQuarticVerticesDipole}}
 end
 
-function calculate_real_space_quartic_vertices(swt::SpinWaveTheory)
-    sys = swt.sys
+function calculate_real_space_quartic_vertices_sun(sys::System)
     N = sys.Ns[1]
     V41_buf = zeros(ComplexF64, N-1, N-1, N-1, N-1)
     V42_buf = zeros(ComplexF64, N-1, N-1)
     V43_buf = zeros(ComplexF64, N-1, N-1)
 
-    real_space_quartic_vertices = RealSpaceQuarticVertices[]
+    real_space_quartic_vertices = RealSpaceQuarticVerticesSUN[]
 
     for int in sys.interactions_union
         for coupling in int.pair
@@ -93,7 +98,7 @@ function calculate_real_space_quartic_vertices(swt::SpinWaveTheory)
                 end
             end
 
-            quartic_vertices = RealSpaceQuarticVertices(V41_buf, V42_buf, V43_buf)
+            quartic_vertices = RealSpaceQuarticVerticesSUN(V41_buf, V42_buf, V43_buf)
             push!(real_space_quartic_vertices, quartic_vertices)
         end
     end
@@ -101,8 +106,34 @@ function calculate_real_space_quartic_vertices(swt::SpinWaveTheory)
     return real_space_quartic_vertices
 end
 
+function calculate_real_space_quartic_vertices_dipole(sys::System)
+    N = sys.Ns[1]
+    S = (N-1)/2
+    real_space_quartic_vertices = RealSpaceQuarticVerticesDipole[]
+
+    for int in sys.interactions_union
+        for coupling in int.pair
+            (; isculled, bilin, biquad, general) = coupling
+
+            isculled && break
+            J = Mat3(bilin*I)
+            V41 = J[3, 3] / S
+            V42 = 1/(4S) * (-J[1, 1] + J[2, 2] + 1im*J[1, 2] + 1im*J[2, 1])
+            V43 = 1/(4S) * (-J[1, 1] - J[2, 2] - 1im*J[1, 2] + 1im*J[2, 1])
+            quartic_vertices = RealSpaceQuarticVerticesDipole(V41, V42, V43)
+            push!(real_space_quartic_vertices, quartic_vertices)
+
+            @assert iszero(biquad) "Biquadratic interactions not supported in :dipole_large_S for the non-perburbative calculation."
+            @assert isempty(general.data)
+        end
+    end
+
+    return real_space_quartic_vertices
+end
+
 function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
-    @assert swt.sys.mode == :SUN "The non-perturbative calculation is only supported in the :SUN mode"
+    (; sys) = swt
+    @assert sys.mode in (:SUN, :dipole_large_S) "The non-perturbative calculation is only supported in the :SUN mode and the :dipole_large_S mode. Note that the quantum corrections is taken care by normal-ordering in the dipole_large_S mode."
     Nu1, Nu2, Nu3 = clustersize
     @assert isodd(Nu1) && isodd(Nu2) && isodd(Nu3) "Each linear dimension of the non-perturbative cluster must be odd to guarantee an equal number of two particle states for all `qcom`s."
 
@@ -124,7 +155,11 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
         Vps[:, :, iq] = deepcopy(V_buf)
     end
 
-    real_space_quartic_vertices = calculate_real_space_quartic_vertices(swt)
+    if sys.mode == :SUN
+        real_space_quartic_vertices = calculate_real_space_quartic_vertices_sun(sys)
+    else
+        real_space_quartic_vertices = calculate_real_space_quartic_vertices_dipole(sys)
+    end
 
     return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, real_space_quartic_vertices)
 

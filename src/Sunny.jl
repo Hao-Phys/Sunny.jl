@@ -81,7 +81,7 @@ include("SpinWaveTheory/DispersionAndIntensities.jl")
 include("SpinWaveTheory/Lanczos.jl")
 include("SpinWaveTheory/LSWTCorrections.jl")
 include("SpinWaveTheory/NonPerturbative.jl")
-include("SpinWaveTheory/QuarticVertices.jl")
+include("SpinWaveTheory/QuarticVerticesSUN.jl")
 export SpinWaveTheory, dispersion, dssf, delta_function_kernel
 
 include("SampledCorrelations/SampledCorrelations.jl")
