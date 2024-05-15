@@ -112,7 +112,7 @@ function quartic_U4_symmetrized_SUN(quartic_fun::Function, npt::NonPerturbativeT
     swt = npt.swt
     N = swt.sys.Ns[1]
     nflavors = N - 1
-    L = nbands(npt.swt)
+    L = nbands(swt)
     q₁, q₂, q₃, q₄ = view(qs, :)
     iq₁, iq₂, iq₃, iq₄ = qs_indices
 
