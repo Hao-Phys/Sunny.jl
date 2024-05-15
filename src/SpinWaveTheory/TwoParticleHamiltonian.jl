@@ -42,11 +42,11 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
         q1_carts_index = state_i.q1_carts_index
         q2_carts_index = state_i.q2_carts_index
 
-        i = state_i.global_i
-        j = state_i.global_j
+        i = state_i.global_index_i
+        j = state_i.global_index_j
 
-        k = state_j.global_i
-        l = state_j.global_j
+        k = state_j.global_index_i
+        l = state_j.global_index_j
 
         ζij = state_i.ζ
         ζkl = state_j.ζ
