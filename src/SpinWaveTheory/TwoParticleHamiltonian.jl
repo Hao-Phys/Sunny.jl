@@ -1,50 +1,41 @@
-function calculate_quartic_vertices(npt::NonPerturbativeTheory)
-    (; swt, clustersize) = npt
-    sys = swt.sys
-    L = nbands(swt)
-    Nu1, Nu2, Nu3 = clustersize
-    qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
-    cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3))
-    linear_indices = LinearIndices(cartes_indices)
-
-    numqs = Nu1*Nu2*Nu3
-
-    ret = zeros(ComplexF64, L, L, L, L, numqs, numqs, numqs, numqs)
-
-    for ci in cartes_indices, cj in cartes_indices, ck in cartes_indices, cl in cartes_indices
-        i = linear_indices[ci]
-        j = linear_indices[cj]
-        k = linear_indices[ck]
-        l = linear_indices[cl]
-
-        if sys.mode == :SUN
-            view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex_SUN(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
-        else
-            view(ret, :, :, :, :, i, j, k, l) .= quartic_vertex_dipole(npt, [-qs[ci], -qs[cj], qs[ck], qs[cl]], [ci, cj, ck, cl])
-        end
-    end
-
-    return ret
-end
-
-function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, quartic_vertices::Array{ComplexF64, 8}, qcom_carts_index)
+function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index)
     H .= 0.0
-    (; two_particle_states) = npt
-    qcom_carts_index = CartesianIndex(qcom_carts_index)
+    (; two_particle_states, swt) = npt
+    L = nbands(swt)
 
+    qcom_carts_index = CartesianIndex(qcom_carts_index)
     com_states = two_particle_states[qcom_carts_index]
 
-    for state_i in com_states, state_j in com_states
-        q1_index = state_i.q1_linear_index
-        q2_index = state_i.q2_linear_index
-        q3_index = state_j.q1_linear_index
-        q4_index = state_j.q2_linear_index
-        q1_carts_index = state_i.q1_carts_index
-        q2_carts_index = state_i.q2_carts_index
+    q_pairs = Tuple{Vec3, Vec3, CartesianIndex, CartesianIndex}[]
+    for state in com_states
+        push!(q_pairs, (state.q1, state.q2, state.q1_carts_index, state.q2_carts_index))
+    end
 
+    unique!(q_pairs)
+
+    dict = Dict{Tuple{Vec3, Vec3, CartesianIndex, CartesianIndex}, Int}()
+    for (i, q_pair) in enumerate(q_pairs)
+        dict[q_pair] = i
+    end
+
+    num_qpairs = length(q_pairs)
+    ret = zeros(ComplexF64, L, L, L, L, num_qpairs, num_qpairs);
+
+    for q_pair1 in q_pairs, q_pair2 in q_pairs
+        i = dict[q_pair1]
+        j = dict[q_pair2]
+
+        if swt.sys.mode == :SUN
+            view(ret, :, :, :, :, i, j) .= quartic_vertex_SUN(npt, [-q_pair1[1], -q_pair1[2], q_pair2[1], q_pair2[2]], [q_pair1[3], q_pair1[4], q_pair2[3], q_pair2[4]])
+        else
+            view(ret, :, :, :, :, i, j) .= quartic_vertex_dipole(npt, [-q_pair1[1], -q_pair1[2], q_pair2[1], q_pair2[2]], [q_pair1[3], q_pair1[4], q_pair2[3], q_pair2[4]])
+        end
+
+    end
+
+    for state_i in com_states, state_j in com_states
         i = state_i.global_index_i
         j = state_i.global_index_j
-
         k = state_j.global_index_i
         l = state_j.global_index_j
 
@@ -59,8 +50,12 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
         band3 = state_j.band1
         band4 = state_j.band2
 
-        # Note that in the definition of the quartic vertex, we've already normalized the result by number of unit cells
-        H[com_i, com_j] += δ(i, k) * δ(j, l) * (npt.Es[band1, q1_carts_index] + npt.Es[band2, q2_carts_index]) * ζij^2 + quartic_vertices[band1, band2, band3, band4, q1_index, q2_index, q3_index, q4_index] * ζij * ζkl
-    end
+        tuple_i = (state_i.q1, state_i.q2, state_i.q1_carts_index, state_i.q2_carts_index)
+        tuple_j = (state_j.q1, state_j.q2, state_j.q1_carts_index, state_j.q2_carts_index)
 
+        # Note that in the definition of the quartic vertex, we've already normalized the result by number of unit cells
+        pairkey_i = dict[tuple_i]
+        pairkey_j = dict[tuple_j]
+        H[com_i, com_j] += δ(i, k) * δ(j, l) * (npt.Es[band1, state_i.q1_carts_index] + npt.Es[band2, state_i.q2_carts_index]) * ζij^2 + ret[band1, band2, band3, band4, pairkey_i, pairkey_j] * ζij * ζkl
+    end
 end

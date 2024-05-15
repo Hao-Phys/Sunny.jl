@@ -5,9 +5,6 @@ struct TwoParticleState
     q1_carts_index :: CartesianIndex
     q2_carts_index :: CartesianIndex
     qcom_carts_index :: CartesianIndex
-    q1_linear_index :: Int
-    q2_linear_index :: Int
-    qcom_linear_index :: Int
     band1 :: Int
     band2 :: Int
     global_index_i :: Int
@@ -19,7 +16,6 @@ end
 function generate_two_particle_basis(cluster_size::NTuple{3, Int}, numbands::Int)
     Nu1, Nu2, Nu3 = cluster_size
     qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
-    qs_linear_indices = LinearIndices(qs)
     cartes_indices = CartesianIndices((1:Nu1, 1:Nu2, 1:Nu3, 1:numbands))
     linear_indices = LinearIndices(cartes_indices)
 
@@ -32,17 +28,14 @@ function generate_two_particle_basis(cluster_size::NTuple{3, Int}, numbands::Int
         if i ≤ j
             q1_carts_index = CartesianIndex(ci[1], ci[2], ci[3])
             q2_carts_index = CartesianIndex(cj[1], cj[2], cj[3])
-            q1_linear_index = qs_linear_indices[q1_carts_index]
-            q2_linear_index = qs_linear_indices[q2_carts_index]
             q1 = qs[q1_carts_index]
             q2 = qs[q2_carts_index]
             qcom = mod.(q1+q2, 1.0)
             qcom_carts_index = findfirst(x -> x ≈ qcom, qs)
-            qcom_linear_index = qs_linear_indices[qcom_carts_index]
 
             tp_counts[qcom_carts_index] += 1
             ζ = i == j ? 1/√2 : 1.0
-            tp_state = TwoParticleState(Vec3(q1), Vec3(q2), Vec3(qcom), q1_carts_index, q2_carts_index, qcom_carts_index, q1_linear_index, q2_linear_index, qcom_linear_index, ci[4], cj[4], i, j, tp_counts[qcom_carts_index], ζ)
+            tp_state = TwoParticleState(Vec3(q1), Vec3(q2), Vec3(qcom), q1_carts_index, q2_carts_index, qcom_carts_index, ci[4], cj[4], i, j, tp_counts[qcom_carts_index], ζ)
             push!(tp_states[qcom_carts_index], tp_state)
         end
     end
