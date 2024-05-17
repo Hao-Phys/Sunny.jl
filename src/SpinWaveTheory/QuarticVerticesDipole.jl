@@ -192,8 +192,8 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
 
             U4_1 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (0, 1, 0, 1))
             U4_2 = quartic_U4_symmetrized_dipole(quartic_U42_dipole!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
-            U4_3 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
-            U4_4 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (1, 1, 0, 1))
+            U4_3 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
+            U4_4 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
             U4_5 = quartic_U4_symmetrized_dipole(quartic_U43_dipole!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
             U4_6 = quartic_U4_symmetrized_dipole(quartic_U42_dipole!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
             U4_7 = quartic_U4_symmetrized_dipole(quartic_U41_dipole!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
@@ -209,13 +209,12 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
         end
     end
 
+    # For dipole mode, we should also loop over Stevens operators of rank two. In particular, 𝒪[2,0]
     for i in 1:L
         c2 = stevens_coefs[i].c2[3]
         U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
-        @. U4 += c2 * U4_0
+        @. U4 += 3c2 * U4_0
     end
-
-    # For dipole mode, we should also loop over Stevens operators of rand two. In particular, 𝒪[2,0]
 
     return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
 end
