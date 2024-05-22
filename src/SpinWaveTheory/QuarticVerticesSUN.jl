@@ -140,7 +140,7 @@ function quartic_U4_symmetrized_SUN(quartic_fun::Function, npt::NonPerturbativeT
 end
 
 function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}})
-    (; swt, real_space_quartic_vertices, clustersize) = npt
+    (; swt, real_space_quartic_vertices) = npt
     L = nbands(npt.swt)
     sys = swt.sys
 
@@ -181,5 +181,5 @@ function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_ind
         end
     end
 
-    return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
+    return U4
 end

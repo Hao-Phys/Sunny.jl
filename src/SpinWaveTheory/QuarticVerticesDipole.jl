@@ -168,7 +168,7 @@ function quartic_U4_symmetrized_dipole(quartic_fun::Function, npt::NonPerturbati
 end
 
 function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}})
-    (; swt, real_space_quartic_vertices, clustersize) = npt
+    (; swt, real_space_quartic_vertices) = npt
     (; sys, data) = swt
     (; stevens_coefs) = data
 
@@ -210,11 +210,16 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
     end
 
     # For dipole mode, we should also loop over Stevens operators of rank two. In particular, 𝒪[2,0]
+    S = (sys.Ns[1]-1)/2
     for i in 1:L
         c2 = stevens_coefs[i].c2[3]
-        U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
-        @. U4 += 3c2 * U4_0
+        if !iszero(c2)
+            # Use the unrenormalize vertex function for the :dipole mode
+            U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
+            factor = sys.mode == :dipole ? 1/(1-1/(2S)) : 1
+            @. U4 += 3c2 * U4_0 * factor
+        end
     end
 
-    return U4 / (clustersize[1]*clustersize[2]*clustersize[3])
+    return U4
 end
