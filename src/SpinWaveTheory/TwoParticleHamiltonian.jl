@@ -53,8 +53,6 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
         tuple_i = (state_i.q1, state_i.q2, state_i.q1_carts_index, state_i.q2_carts_index)
         tuple_j = (state_j.q1, state_j.q2, state_j.q1_carts_index, state_j.q2_carts_index)
 
-        # The quartic vertex is multiplied by a factor of `Nm` (number of magnetic sites) in 
-        # the magnetic unit cell. This is because the final results are reported in the Brillouin zone of the chemical unit cell.
         pairkey_i = dict[tuple_i]
         pairkey_j = dict[tuple_j]
         H[com_i, com_j] += (δ(i, k) * δ(j, l) + δ(i, l) * δ(j, k)) * (npt.Es[band1, state_i.q1_carts_index] + npt.Es[band2, state_i.q2_carts_index]) * ζij^2 + ret[band1, band2, band3, band4, pairkey_i, pairkey_j] * ζij * ζkl / Nu
