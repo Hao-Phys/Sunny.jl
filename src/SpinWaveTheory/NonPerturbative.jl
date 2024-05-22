@@ -58,7 +58,7 @@ end
 
 struct NonPerturbativeTheory
     swt :: SpinWaveTheory
-    clustersize :: NTuple{3, Int}
+    clustersize :: NTuple{3, Int}   # Cluster size for number of magnetic unit cell
     two_particle_states :: Array{Vector{TwoParticleState}, 3}
     Es :: Array{Float64, 4}
     Vps :: Array{ComplexF64, 5}
@@ -126,7 +126,7 @@ end
 
 function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     (; sys) = swt
-    @assert sys.mode in (:SUN, :dipole_large_S) "The non-perturbative calculation is only supported in the :SUN mode and the :dipole_large_S mode. Note that the quantum corrections is taken care by normal-ordering in the dipole_large_S mode."
+    @assert sys.mode in (:SUN, :dipole, :dipole_large_S)
     Nu1, Nu2, Nu3 = clustersize
     @assert isodd(Nu1) && isodd(Nu2) && isodd(Nu3) "Each linear dimension of the non-perturbative cluster must be odd to guarantee an equal number of two particle states for all `qcom`s."
 
