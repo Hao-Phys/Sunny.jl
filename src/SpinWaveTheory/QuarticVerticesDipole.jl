@@ -216,7 +216,7 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
         if !iszero(c2)
             # Use the unrenormalize vertex function for the :dipole mode
             U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
-            factor = sys.mode == :dipole ? 1/(1-1/(2S)) : 1
+            factor 1/(1-1/(2S))
             @. U4 += 3c2 * U4_0 * factor
         end
     end

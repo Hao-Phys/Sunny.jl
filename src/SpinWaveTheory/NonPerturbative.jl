@@ -126,7 +126,7 @@ end
 
 function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     (; sys) = swt
-    @assert sys.mode in (:SUN, :dipole, :dipole_large_S)
+    @assert sys.mode in (:SUN, :dipole) "Non-perturbative calculation is only supported in :SUN or :dipole mode."
     Nu1, Nu2, Nu3 = clustersize
     @assert isodd(Nu1) && isodd(Nu2) && isodd(Nu3) "Each linear dimension of the non-perturbative cluster must be odd to guarantee an equal number of two particle states for all `qcom`s."
 
