@@ -175,9 +175,8 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
     L = nbands(swt)
 
     for i in 1:L
-        (; c4, c6) = stevens_coefs[i]
-        @assert iszero(c4) "Higher rank Stevens operators not supported in :dipole_large_S non-perturbative calculations"
-        @assert iszero(c6) "Higher rank Stevens operators not supported in :dipole_large_S non-perturbative calculations"
+        (; c6) = stevens_coefs[i]
+        @assert iszero(c6) "Rank 6 Stevens operators not supported in :dipole_large_S non-perturbative calculations yet"
     end
 
     U4 = zeros(ComplexF64, L, L, L, L)
@@ -209,15 +208,20 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
         end
     end
 
-    # For dipole mode, we should also loop over Stevens operators of rank two. In particular, 𝒪[2,0]
+    # In :dipole mode, the normal-ordering takes care of the renormalization of the magnitude
+    # of the single-ion anisotropy for the quadratic term. However, here for the quartic Hamiltonian, we need to unrenormalize the magnitude and then apply the correct prefactor.
     S = (sys.Ns[1]-1)/2
     for i in 1:L
-        c2 = stevens_coefs[i].c2[3]
-        if !iszero(c2)
-            # Use the unrenormalize vertex function for the :dipole mode
+        if S ≥ 1
+            (; c2, c4) = stevens_coefs[i]
+            c₂ = 1 - 1/(2S)
+            c₄ = 1 - 3/S + 11/(4S^2) - 3/(4S^3)
+
+            c20 = c2[3] / c₂
+            c40 = c4[5] / c₄
+
             U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
-            factor 1/(1-1/(2S))
-            @. U4 += 3c2 * U4_0 * factor
+            @. U4 += (3c20 + 180S^2*(1-5/(2S)+3/(2S^2))*c40) * U4_0
         end
     end
 
