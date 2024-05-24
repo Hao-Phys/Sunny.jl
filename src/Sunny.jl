@@ -83,6 +83,8 @@ include("SpinWaveTheory/LSWTCorrections.jl")
 include("SpinWaveTheory/NonPerturbative.jl")
 include("SpinWaveTheory/QuarticVerticesSUN.jl")
 include("SpinWaveTheory/QuarticVerticesDipole.jl")
+include("SpinWaveTheory/CubicVerticesSUN.jl")
+include("SpinWaveTheory/CubicVerticesDipole.jl")
 include("SpinWaveTheory/TwoParticleHamiltonian.jl")
 export SpinWaveTheory, dispersion, dssf, delta_function_kernel
 
