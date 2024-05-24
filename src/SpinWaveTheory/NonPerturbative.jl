@@ -56,6 +56,18 @@ struct RealSpaceQuarticVerticesDipole
     V43 :: ComplexF64
 end
 
+struct RealSpaceCubicVerticesSUN
+    V31_p :: Vector{ComplexF64}
+    V31_m :: Vector{ComplexF64}
+    V32_p :: Array{ComplexF64, 3}
+    V32_m :: Array{ComplexF64, 3}
+end
+
+struct RealSpaceCubicVerticesDipole
+    V31 :: ComplexF64
+    V32 :: ComplexF64
+end
+
 struct NonPerturbativeTheory
     swt :: SpinWaveTheory
     clustersize :: NTuple{3, Int}   # Cluster size for number of magnetic unit cell
@@ -63,6 +75,7 @@ struct NonPerturbativeTheory
     Es :: Array{Float64, 4}
     Vps :: Array{ComplexF64, 5}
     real_space_quartic_vertices :: Vector{Union{RealSpaceQuarticVerticesSUN, RealSpaceQuarticVerticesDipole}}
+    real_space_cubic_vertices   :: Vector{Union{RealSpaceCubicVerticesSUN, RealSpaceCubicVerticesDipole}}
 end
 
 function calculate_real_space_quartic_vertices_sun(sys::System)
@@ -124,6 +137,67 @@ function calculate_real_space_quartic_vertices_dipole(sys::System)
     return real_space_quartic_vertices
 end
 
+function calculate_real_space_cubic_vertices_sun(sys::System)
+    N = sys.Ns[1]
+    V31_p_buf = zeros(ComplexF64, N-1)
+    V31_m_buf = zeros(ComplexF64, N-1)
+    V32_p_buf = zeros(ComplexF64, N-1, N-1, N-1)
+    V32_m_buf = zeros(ComplexF64, N-1, N-1, N-1)
+
+    real_space_cubic_vertices = RealSpaceCubicVerticesSUN[]
+
+    for int in sys.interactions_union
+        for coupling in int.pair
+            coupling.isculled && break
+            V31_p_buf .= 0.0
+            V31_m_buf .= 0.0
+            V32_p_buf .= 0.0
+            V32_m_buf .= 0.0
+
+            for (A, B) in coupling.general.data
+                for σ1 in 1:N-1
+                    V31_p_buf[σ1] += -0.5 * A[N, N] * B[N, σ1]
+                    V31_m_buf[σ1] += -0.5 * B[N, N] * A[N, σ1]
+                    for σ2 in 1:N-1, σ3 in 1:N-1
+                        V32_p_buf[σ1, σ2, σ3] += A[N, σ1] * (B[σ2, σ3] - δ(σ2, σ3)*B[N, N])
+                        V32_m_buf[σ1, σ2, σ3] += B[N, σ1] * (A[σ2, σ3] - δ(σ2, σ3)*A[N, N])
+                    end
+                end
+            end
+
+            cubic_vertices = RealSpaceCubicVerticesSUN(V31_p_buf, V31_m_buf, V32_p_buf, V32_m_buf)
+            push!(real_space_cubic_vertices, cubic_vertices)
+        end
+    end
+
+    return real_space_cubic_vertices
+end
+
+function calculate_real_space_cubic_vertices_dipole(sys::System)
+    N = sys.Ns[1]
+    S = (N-1)/2
+    real_space_cubic_vertices = RealSpaceCubicVerticesDipole[]
+
+    for int in sys.interactions_union
+        for coupling in int.pair
+            (; isculled, bilin, biquad, general) = coupling
+
+            isculled && break
+            J = Mat3(bilin*I)
+            V31 = 0.5 * √S * (-J[1, 3] + 1im*J[2, 3] ) / S
+            V32 = 0.5 * √S * (-J[3, 1] + 1im*J[3, 2] ) / S
+
+            cubic_vertices = RealSpaceCubicVerticesDipole(V31, V32)
+            push!(real_space_cubic_vertices, cubic_vertices)
+
+            @assert iszero(biquad) "Biquadratic interactions not supported in :dipole_large_S for the non-perburbative calculation."
+            @assert isempty(general.data)
+        end
+    end
+
+    return real_space_cubic_vertices
+end
+
 function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     (; sys) = swt
     @assert sys.mode in (:SUN, :dipole) "Non-perturbative calculation is only supported in :SUN or :dipole mode."
@@ -160,10 +234,12 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
 
     if sys.mode == :SUN
         real_space_quartic_vertices = calculate_real_space_quartic_vertices_sun(sys)
+        real_space_cubic_vertices   = calculate_real_space_cubic_vertices_sun(sys)
     else
         real_space_quartic_vertices = calculate_real_space_quartic_vertices_dipole(sys)
+        real_space_cubic_vertices   = calculate_real_space_cubic_vertices_dipole(sys)
     end
 
-    return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, real_space_quartic_vertices)
+    return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, real_space_quartic_vertices, real_space_cubic_vertices)
 
 end
