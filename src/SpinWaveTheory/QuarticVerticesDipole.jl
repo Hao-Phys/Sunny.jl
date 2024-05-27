@@ -36,11 +36,11 @@ function quartic_U40_symmetrized_dipole(npt::NonPerturbativeTheory, qs_indices::
     permutedims!(U4_buf_perm, U4_buf, (2, 1, 3, 4))
     U4 .+= U4_buf_perm
 
-    quartic_U40_dipole!(U4_buf, npt,[iq₂, iq₁, iq₃, iq₄], α)
+    quartic_U40_dipole!(U4_buf, npt,[iq₁, iq₂, iq₄, iq₃], α)
     permutedims!(U4_buf_perm, U4_buf, (1, 2, 4, 3))
     U4 .+= U4_buf_perm
 
-    quartic_U40_dipole!(U4_buf, npt,[iq₂, iq₁, iq₃, iq₄], α)
+    quartic_U40_dipole!(U4_buf, npt,[iq₂, iq₁, iq₄, iq₃], α)
     permutedims!(U4_buf_perm, U4_buf, (2, 1, 4, 3))
     U4 .+= U4_buf_perm
 end
@@ -212,17 +212,19 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
     # of the single-ion anisotropy for the quadratic term. However, here for the quartic Hamiltonian, we need to unrenormalize the magnitude and then apply the correct prefactor.
     S = (sys.Ns[1]-1)/2
     for i in 1:L
-        if S ≥ 1
-            (; c2, c4) = stevens_coefs[i]
-            c₂ = 1 - 1/(2S)
-            c₄ = 1 - 3/S + 11/(4S^2) - 3/(4S^3)
+        (; c2, c4) = stevens_coefs[i]
+        c₂ = 1 - 1/(2S)
+        c₄ = 1 - 3/S + 11/(4S^2) - 3/(4S^3)
 
-            c20 = c2[3] / c₂
-            c40 = c4[5] / c₄
+        # No need to unrenormalize is the renormalization is zero
+        c₂ = iszero(c₂) ? 1.0 : c₂
+        c₄ = iszero(c₄) ? 1.0 : c₂
 
-            U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
-            @. U4 += (3c20 + 180S^2*(1-5/(2S)+3/(2S^2))*c40) * U4_0
-        end
+        c20 = c2[3] / c₂
+        c40 = c4[5] / c₄
+
+        U4_0 = quartic_U40_symmetrized_dipole(npt, qs_indices, i)
+        @. U4 += (3c20 + 180S^2*(1-5/(2S)+3/(2S^2))*c40) * U4_0
     end
 
     return U4
