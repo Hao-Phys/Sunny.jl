@@ -1,4 +1,14 @@
-function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex)
+# Here we've not included the corrections to the single-particle Hamiltonian yet
+function one_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
+    H .= 0.0
+    L  = nbands(npt.swt)
+    Es = npt.Es[:, qcom_carts_index]
+    for i in 1:L
+        H[i, i] += Es[i]
+    end
+end
+
+function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
     H .= 0.0
     (; two_particle_states, swt, clustersize) = npt
     Nu = clustersize[1] * clustersize[2] * clustersize[3]
@@ -19,7 +29,7 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
     end
 
     num_qpairs = length(q_pairs)
-    ret = zeros(ComplexF64, L, L, L, L, num_qpairs, num_qpairs);
+    ret = zeros(ComplexF64, L, L, L, L, num_qpairs, num_qpairs)
 
     for q_pair1 in q_pairs, q_pair2 in q_pairs
         i = dict[q_pair1]
@@ -59,6 +69,49 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
     end
 end
 
+function one_to_two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
+    H .= 0.0
+    (; two_particle_states, swt, clustersize) = npt
+    Nu = clustersize[1] * clustersize[2] * clustersize[3]
+    L = nbands(swt)
+
+    com_states = two_particle_states[qcom_carts_index]
+
+    q_pairs = Tuple{Vec3, Vec3, CartesianIndex, CartesianIndex}[]
+    for state in com_states
+        push!(q_pairs, (state.q1, state.q2, state.q1_carts_index, state.q2_carts_index))
+    end
+
+    unique!(q_pairs)
+
+    dict = Dict{Tuple{Vec3, Vec3, CartesianIndex, CartesianIndex}, Int}()
+    for (i, q_pair) in enumerate(q_pairs)
+        dict[q_pair] = i
+    end
+
+    num_qpairs = length(q_pairs)
+    ret = zeros(ComplexF64, L, L, L, num_qpairs)
+
+    qcom = com_states[1].qcom
+    for q_pair in q_pairs
+        i = dict[q_pair]
+
+        if swt.sys.mode == :SUN
+            view(ret, :, :, :, i) .= cubic_vertex_SUN(npt, [-qcom, q_pair[1], q_pair[2]], [qcom_carts_index, q_pair[3], q_pair[4]])
+        else
+            view(ret, :, :, :, i) .= cubic_vertex_dipole(npt, [-qcom, q_pair[1], q_pair[2]], [qcom_carts_index, q_pair[3], q_pair[4]])
+        end
+    end
+
+    for i in 1:L, com_state in com_states
+        tuple = (com_state.q1, com_state.q2, com_state.q1_carts_index, com_state.q2_carts_index)
+        pair_key = dict[tuple]
+        ζjk = com_state.ζ
+
+        H[i, com_state.com_index] += ret[i, com_state.band1, com_state.band2, pair_key] * ζjk / √Nu
+    end
+
+end
 
 # TODO: integrate this with Lanczos
 # function two_particle_dispersion(npt::NonPerturbativeTheory, qs, niters)
