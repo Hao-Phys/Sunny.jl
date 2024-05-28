@@ -218,7 +218,7 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
 
         # No need to unrenormalize is the renormalization is zero
         c₂ = iszero(c₂) ? 1.0 : c₂
-        c₄ = iszero(c₄) ? 1.0 : c₂
+        c₄ = iszero(c₄) ? 1.0 : c₄
 
         c20 = c2[3] / c₂
         c40 = c4[5] / c₄
