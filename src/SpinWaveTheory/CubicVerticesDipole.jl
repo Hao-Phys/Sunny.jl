@@ -152,7 +152,7 @@ function cubic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_in
             V31 = real_space_cubic_vertices[i].V31
             V32 = real_space_cubic_vertices[i].V32
 
-            @. U3 += V31 * (U3_1+0.5*U3_3) + conj(V31) * (U3_2+0.5*U3_4) + V32 * (U3_5+0.5*U3_7) + conj(V32) * (U3_6+0.5*U3_8)
+            @. U3 += V31 * (U3_1+0.25*U3_3) + conj(V31) * (U3_2+0.25*U3_4) + V32 * (U3_5+0.25*U3_7) + conj(V32) * (U3_6+0.25*U3_8)
         end
     end
 

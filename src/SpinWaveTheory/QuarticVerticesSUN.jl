@@ -158,7 +158,7 @@ function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_ind
             U4_1 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 1, 0, 1))
             U4_2 = quartic_U4_symmetrized_SUN(quartic_U42_SUN!, npt, bond, qs, qs_indices, (1, 1, 1, 0))
             U4_3 = quartic_U4_symmetrized_SUN(quartic_U42_SUN!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
-            U4_4 = quartic_U4_symmetrized_SUN(quartic_U43_SUN!, npt, bond, qs, qs_indices, (1, 1, 0, 1))
+            U4_4 = quartic_U4_symmetrized_SUN(quartic_U43_SUN!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
             U4_5 = quartic_U4_symmetrized_SUN(quartic_U43_SUN!, npt, bond, qs, qs_indices, (1, 0, 0, 0))
             U4_6 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 1, 1, 1))
             U4_7 = quartic_U4_symmetrized_SUN(quartic_U41_SUN!, npt, bond, qs, qs_indices, (0, 0, 0, 1))
@@ -172,13 +172,14 @@ function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_ind
             @tensor begin
                 U4_buf[n₁, n₂, n₃, n₄] = V41[σ₁, σ₂, σ₃, σ₄] * U4_1[σ₁, σ₃, σ₂, σ₄, n₁, n₂, n₃, n₄] +
                 V42[σ₁, σ₃] * (U4_2[σ₂, σ₂, σ₃, σ₁, n₁, n₂, n₃, n₄] + U4_3[σ₂, σ₂, σ₁, σ₃, n₁, n₂, n₃, n₄]) +
-                conj(V42[σ₁, σ₃]) * (U4_4[σ₃, σ₂, σ₁, σ₂, n₁, n₂, n₃, n₄] + U4_5[σ₃, σ₁, σ₂, σ₂, n₁, n₂, n₃, n₄]) +
+                conj(V42[σ₁, σ₃]) * (U4_4[σ₁, σ₃, σ₂, σ₂, n₁, n₂, n₃, n₄] + U4_5[σ₃, σ₁, σ₂, σ₂, n₁, n₂, n₃, n₄]) +
                 V43[σ₁, σ₃] * (U4_6[σ₁, σ₂, σ₂, σ₃, n₁, n₂, n₃, n₄] + U4_7[σ₁, σ₂, σ₂, σ₃, n₁, n₂, n₃, n₄]) +
                 conj(V43[σ₁, σ₃]) * (U4_8[σ₃, σ₂, σ₂, σ₁, n₁, n₂, n₃, n₄] + U4_9[σ₃, σ₂, σ₂, σ₁, n₁, n₂, n₃, n₄])
             end
 
             U4 .+= U4_buf
-        end
+
+            end
     end
 
     return U4
