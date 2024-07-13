@@ -176,7 +176,7 @@ function quartic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_
 
     for i in 1:L
         (; c6) = stevens_coefs[i]
-        @assert iszero(c6) "Rank 6 Stevens operators not supported in :dipole_large_S non-perturbative calculations yet"
+        @assert iszero(c6) "Rank 6 Stevens operators not supported in :dipole non-perturbative calculations yet"
     end
 
     U4 = zeros(ComplexF64, L, L, L, L)
