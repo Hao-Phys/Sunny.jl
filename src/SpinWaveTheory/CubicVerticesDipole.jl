@@ -100,6 +100,39 @@ function cubic_U32′_dipole!(U32_buf::Array{ComplexF64, 3}, npt::NonPerturbativ
     end
 end
 
+function cubic_U33′_dipole!(U33_buf::Array{ComplexF64, 3}, npt::NonPerturbativeTheory, qs_indices::Vector{CartesianIndex{3}}, α::Int)
+    U33_buf .= 0.0
+    (; swt, Vps) = npt
+    L = nbands(swt)
+
+    Vp1 = view(Vps, :, :, qs_indices[1])
+    Vp2 = view(Vps, :, :, qs_indices[2])
+    Vp3 = view(Vps, :, :, qs_indices[3])
+
+    for n₁ in 1:L, n₂ in 1:L, n₃ in 1:L
+        U33_buf[n₁, n₂, n₃] += conj(Vp1[α+L, n₁]) * Vp2[α, n₂] * Vp3[α, n₃] +
+        Vp2[α, n₂] * conj(Vp1[α+L, n₁]) * Vp3[α, n₃] +
+        Vp3[α, n₃] * Vp2[α, n₂] * conj(Vp1[α+L, n₁])
+    end
+end
+
+
+function cubic_U34′_dipole!(U34_buf::Array{ComplexF64, 3}, npt::NonPerturbativeTheory, qs_indices::Vector{CartesianIndex{3}}, α::Int)
+    U34_buf .= 0.0
+    (; swt, Vps) = npt
+    L = nbands(swt)
+
+    Vp1 = view(Vps, :, :, qs_indices[1])
+    Vp2 = view(Vps, :, :, qs_indices[2])
+    Vp3 = view(Vps, :, :, qs_indices[3])
+
+    for n₁ in 1:L, n₂ in 1:L, n₃ in 1:L
+        U34_buf[n₁, n₂, n₃] += conj(Vp1[α, n₁]) * Vp2[α+L, n₂] * Vp3[α+L, n₃] +
+        Vp2[α+L, n₂] * conj(Vp1[α, n₁]) * Vp3[α+L, n₃] +
+        Vp3[α+L, n₃] * Vp2[α+L, n₂] * conj(Vp1[α, n₁])
+    end
+end
+
 function cubic_U3′_symmetrized_dipole(cubic_fun::Function, npt::NonPerturbativeTheory, qs_indices::Vector{CartesianIndex{3}}, α::Int)
     swt = npt.swt
     L = nbands(swt)
@@ -122,13 +155,17 @@ end
 
 function cubic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_indices::Vector{CartesianIndex{3}})
     (; swt, real_space_cubic_vertices) = npt
+    (; sys, data) = swt
+    (; stevens_coefs) = data 
+
     L = nbands(npt.swt)
-    sys = swt.sys
-    # N = sys.Ns[1]
-    # S = (N-1) / 2
+
+    for i in 1:L
+        (; c6) = stevens_coefs[i]
+        @assert iszero(c6) "Rank 6 Stevens operators not supported in :dipole non-perturbative calculations yet"
+    end
 
     U3 = zeros(ComplexF64, L, L, L)
-    U3_buf  = zeros(ComplexF64, L, L, L)
 
     i = 0
     # For this moment, we only support the cubic vertices from bilinear interactions for the dipole mode
@@ -137,7 +174,6 @@ function cubic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_in
         for coupling in int.pair
             coupling.isculled && break
             bond = coupling.bond
-            U3_buf .= 0.0
             i += 1
 
             U3_1 = cubic_U3_symmetrized_dipole(cubic_U31_dipole!, npt, bond, qs, qs_indices, (1, 1, 0))
@@ -154,6 +190,27 @@ function cubic_vertex_dipole(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_in
 
             @. U3 += V31 * (U3_1+0.25*U3_3) + conj(V31) * (U3_2+0.25*U3_4) + V32 * (U3_5+0.25*U3_7) + conj(V32) * (U3_6+0.25*U3_8)
         end
+    end
+
+    S = (sys.Ns[1]-1)/2
+    for i in 1:L
+        (; c2, c4) = stevens_coefs[i]
+        c₂ = 1 - 1/(2S)
+        c₄ = 1 - 3/S + 11/(4S^2) - 3/(4S^3)
+
+        # No need to unrenormalize is the renormalization is zero
+        c₂ = iszero(c₂) ? 1.0 : c₂
+        c₄ = iszero(c₄) ? 1.0 : c₄
+
+        c2_new = c2 ./ c₂
+        c4_new = c4 ./ c₄
+
+        U30_1 = cubic_U3′_symmetrized_dipole(cubic_U31′_dipole!, npt, qs_indices, i)
+        U30_2 = cubic_U3′_symmetrized_dipole(cubic_U32′_dipole!, npt, qs_indices, i)
+        U30_3 = cubic_U3′_symmetrized_dipole(cubic_U33′_dipole!, npt, qs_indices, i)
+        U30_4 = cubic_U3′_symmetrized_dipole(cubic_U34′_dipole!, npt, qs_indices, i)
+
+        @. U3 += 3*√(2S)/4 * ( (c2_new[2]+1im*c2_new[4]) * U30_1 + (c2_new[2]-1im*c2_new[4]) * U30_2 ) + 0.5 * (2S)^(3/2)*S * ( (c4_new[2]-1im*c4_new[8]) * U30_3 + (c4_new[2]+1im*c4_new[8]) * U30_4 )
     end
 
     return U3
