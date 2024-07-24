@@ -1,5 +1,5 @@
 
-function quartic_U40_dipole!(U41_buf::Array{ComplexF64, 4}, npt::NonPerturbativeTheory,qs_indices::Vector{CartesianIndex{3}}, α::Int)
+function quartic_U40_dipole!(U41_buf::Array{ComplexF64, 4}, npt::NonPerturbativeTheory, qs_indices::Vector{CartesianIndex{3}}, α::Int)
     U41_buf .= 0.0
     (; swt, Vps) = npt
     L = nbands(swt)
