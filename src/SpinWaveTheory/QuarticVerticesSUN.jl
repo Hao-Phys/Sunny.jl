@@ -179,7 +179,7 @@ function quartic_vertex_SUN(npt::NonPerturbativeTheory, qs::Vector{Vec3}, qs_ind
 
             U4 .+= U4_buf
 
-            end
+        end
     end
 
     return U4
