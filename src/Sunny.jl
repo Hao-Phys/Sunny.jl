@@ -86,6 +86,8 @@ include("SpinWaveTheory/QuarticVerticesDipole.jl")
 include("SpinWaveTheory/CubicVerticesSUN.jl")
 include("SpinWaveTheory/CubicVerticesDipole.jl")
 include("SpinWaveTheory/NParticleHamiltonian.jl")
+include("SpinWaveTheory/QuadraticVerticesSUN.jl")
+include("SpinWaveTheory/QuadraticVerticesDipole.jl")
 export SpinWaveTheory, dispersion, dssf, delta_function_kernel
 
 include("SampledCorrelations/SampledCorrelations.jl")

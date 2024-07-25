@@ -72,6 +72,7 @@ struct NonPerturbativeTheory
     swt :: SpinWaveTheory
     clustersize :: NTuple{3, Int}   # Cluster size for number of magnetic unit cell
     two_particle_states :: Array{Vector{TwoParticleState}, 3}
+    qs :: Array{Vec3, 3}
     Es :: Array{Float64, 4}
     Vps :: Array{ComplexF64, 5}
     real_space_quartic_vertices :: Vector{Union{RealSpaceQuarticVerticesSUN, RealSpaceQuarticVerticesDipole}}
@@ -207,7 +208,7 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     L = nbands(swt)
     two_particle_states = generate_two_particle_basis(clustersize, L)
 
-    qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
+    qs = [Vec3([i/Nu1, j/Nu2, k/Nu3]) for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
 
     Es = zeros(L, Nu1, Nu2, Nu3)
     Vps = zeros(ComplexF64, 2L, 2L, Nu1, Nu2, Nu3)
@@ -217,7 +218,7 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     if sys.mode == :SUN
         for iq in CartesianIndices(qs)
             q = qs[iq]
-            swt_hamiltonian_SUN!(H_buf, swt, Vec3(q))
+            swt_hamiltonian_SUN!(H_buf, swt, q)
             E = bogoliubov!(V_buf, H_buf)
             Es[:, iq] = E
             Vps[:, :, iq] = deepcopy(V_buf)
@@ -225,7 +226,7 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
     else
         for iq in CartesianIndices(qs)
             q = qs[iq]
-            swt_hamiltonian_dipole!(H_buf, swt, Vec3(q))
+            swt_hamiltonian_dipole!(H_buf, swt, q)
             E = bogoliubov!(V_buf, H_buf)
             Es[:, iq] = E
             Vps[:, :, iq] = deepcopy(V_buf)
@@ -240,6 +241,6 @@ function NonPerturbativeTheory(swt::SpinWaveTheory, clustersize::NTuple{3, Int})
         real_space_cubic_vertices   = calculate_real_space_cubic_vertices_dipole(sys)
     end
 
-    return NonPerturbativeTheory(swt, clustersize, two_particle_states, Es, Vps, real_space_quartic_vertices, real_space_cubic_vertices)
+    return NonPerturbativeTheory(swt, clustersize, two_particle_states, qs, Es, Vps, real_space_quartic_vertices, real_space_cubic_vertices)
 
 end
