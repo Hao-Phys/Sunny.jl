@@ -1,5 +1,5 @@
 # Here we've not included the corrections to the single-particle Hamiltonian yet
-function one_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3}; opts...)
+function one_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3}; opts...)
     H .= 0.0
     L  = nbands(npt.swt)
     Es = npt.Es[:, qcom_carts_index]
@@ -45,7 +45,7 @@ end
 #     end
 # end
 
-function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
+function two_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
     H .= 0.0
     (; two_particle_states, swt, clustersize) = npt
     Nu = clustersize[1] * clustersize[2] * clustersize[3]
@@ -106,7 +106,7 @@ function two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTh
     end
 end
 
-function one_to_two_particle_hamiltonian!(H::Matrix{ComplexF64}, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
+function one_to_two_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3})
     H .= 0.0
     (; two_particle_states, swt, clustersize) = npt
     Nu = clustersize[1] * clustersize[2] * clustersize[3]
