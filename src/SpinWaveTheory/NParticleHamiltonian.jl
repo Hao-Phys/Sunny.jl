@@ -1,5 +1,5 @@
 # Here we've not included the corrections to the single-particle Hamiltonian yet
-function one_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3}; opts...)
+function one_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_index::CartesianIndex{3}; single_particle_correction::Bool=true, opts...)
     H .= 0.0
     L  = nbands(npt.swt)
     Es = npt.Es[:, qcom_carts_index]
@@ -11,14 +11,16 @@ function one_particle_hamiltonian!(H, npt::NonPerturbativeTheory, qcom_carts_ind
     end
 
     # Diagonal and off-diagonal part from normal-ordering
-    if npt.swt.sys.mode == :SUN
-        Q2 = quadratic_vertex_SUN(npt, q, qcom_carts_index; opts...)
-    else
-        Q2 = quadratic_vertex_dipole(npt, q, qcom_carts_index; opts...)
-    end
+    if single_particle_correction
+        if npt.swt.sys.mode == :SUN
+            Q2 = quadratic_vertex_SUN(npt, q, qcom_carts_index; opts...)
+        else
+            Q2 = quadratic_vertex_dipole(npt, q, qcom_carts_index; opts...)
+        end
 
-    for i in 1:L, j in 1:L
-        H[i, j] += Q2[i, j]
+        for i in 1:L, j in 1:L
+            H[i, j] += Q2[i, j]
+        end
     end
 end
 
