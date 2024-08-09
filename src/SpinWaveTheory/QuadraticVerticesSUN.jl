@@ -42,7 +42,7 @@ function quadratic_Q41_SUN(npt::NonPerturbativeTheory, bond::Bond, q::Vec3, q_in
         return SVector{num_ints}(f)
     end 
 
-    Q41_buf = reshape(ret[1], (nflavors, nflavors, nflavors, nflavors, L, L))
+    Q41_buf = reshape(collect(ret[1]), (nflavors, nflavors, nflavors, nflavors, L, L))
 
     return Q41_buf
 end
@@ -89,7 +89,7 @@ function quadratic_Q42_SUN(npt::NonPerturbativeTheory, bond::Bond, q::Vec3, q_in
         return SVector{num_ints}(f)
     end 
 
-    Q42_buf = reshape(ret[1], (nflavors, nflavors, nflavors, nflavors, L, L))
+    Q42_buf = reshape(collect(ret[1]), (nflavors, nflavors, nflavors, nflavors, L, L))
 
     return Q42_buf
 end
@@ -137,7 +137,7 @@ function quadratic_Q43_SUN(npt::NonPerturbativeTheory, bond::Bond, q::Vec3, q_in
         return SVector{num_ints}(f)
     end 
 
-    Q43_buf = reshape(ret[1], (nflavors, nflavors, nflavors, nflavors, L, L))
+    Q43_buf = reshape(collect(ret[1]), (nflavors, nflavors, nflavors, nflavors, L, L))
 
     return Q43_buf
 end
