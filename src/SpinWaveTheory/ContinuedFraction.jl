@@ -109,8 +109,13 @@ function modified_lanczos_aux!(as, bs, H, f0, niters)
     for j in 2:niters
         @. f_curr = f_next
         bs[j-1] = real(dot(f_curr, f_curr))
-        @assert bs[j-1] > 1e-12 "Norm of f_curr is too small. Find all orthogonal states. Consider reduce the number of iterations."
-        bs[j-1] /= real(dot(f_prev, f_prev))
+        # If the norm of the current state is too small, we set the state to zero
+        if bs[j-1] < 1e-12
+            bs[j-1] = 0
+            @. f_next = f_curr = 0
+        else
+            bs[j-1] /= real(dot(f_prev, f_prev))
+        end
         mul!(f_next, H, f_curr)
         as[j] = real(dot(f_next, f_curr)) / real(dot(f_curr, f_curr))
         @. f_next = f_next - as[j] * f_curr - bs[j-1] * f_prev
