@@ -110,7 +110,7 @@ function modified_lanczos_aux!(as, bs, H, f0, niters)
         @. f_curr = f_next
         bs[j-1] = real(dot(f_curr, f_curr))
         # If the norm of the current state is too small, we set the state to zero
-        if bs[j-1] < 1e-12
+        if abs(bs[j-1]) < 1e-12
             bs[j-1] = 0
             @. f_next = f_curr = 0
         else
