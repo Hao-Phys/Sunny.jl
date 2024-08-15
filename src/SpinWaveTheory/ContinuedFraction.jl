@@ -132,6 +132,9 @@ function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64
     all_qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
     @assert q in all_qs "The momentum is not in the grid."
     q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
+    for i in 1:3
+        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
+    end
     q_reshaped = mod.(q_reshaped, 1.0)
     qcom_carts_index = findmin(x -> norm(x - q_reshaped), all_qs)[2]
 
@@ -179,6 +182,9 @@ function dssf_continued_fraction_two_particle(npt::NonPerturbativeTheory, q, ωs
     all_qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
     @assert q in all_qs "The momentum is not in the grid."
     q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
+    for i in 1:3
+        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
+    end
     q_reshaped = mod.(q_reshaped, 1.0)
     qcom_carts_index = findmin(x -> norm(x - q_reshaped), all_qs)[2]
 
