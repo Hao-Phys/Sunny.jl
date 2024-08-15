@@ -2,7 +2,7 @@ module Sunny
 
 using LinearAlgebra
 import LinearMaps: LinearMap, FunctionMap
-import StaticArrays: SVector, SMatrix, SArray, MVector, MMatrix, SA, @SVector
+import StaticArrays: SVector, SMatrix, SArray, MVector, MMatrix, SA, @SVector, setindex
 import OffsetArrays: OffsetArray, OffsetMatrix, Origin
 import SpecialFunctions: erfc
 import FFTW
