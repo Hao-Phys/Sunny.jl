@@ -52,7 +52,7 @@ function continued_fraction_initial_states(npt::NonPerturbativeTheory, q_reshape
                     @views O = observable_operators[:, :, μ, i]
                     for α in 1:N-1
                         for β in 1:N-1
-                            f0s[is, μ] += Avec_pref[i] * (O[α, β] - O[N, N] * δ(α, β)) * conj(vq1[α, i, 1]) * conj(vq2[β, i, 2]) / (√Nu * state.ζ)
+                            f0s[is, μ] += Avec_pref[i] * (O[α, β] - O[N, N] * δ(α, β)) * (conj(vq1[α, i, 1]) * conj(vq2[β, i, 2]) + conj(vq1[β, i, 2]) * conj(vq2[α, i, 1])) / (√Nu * state.ζ)
                         end
                     end
                 end
@@ -86,7 +86,7 @@ function continued_fraction_initial_states(npt::NonPerturbativeTheory, q_reshape
             for i in 1:Nm
                 for μ in 1:num_obs
                     @views O = observable_operators[:, :, μ, i]
-                    f0s[is, μ] += Avec_pref[i] * O[1, 3] * conj(vq1[i, 2])*conj(vq2[i, 1])  / (√Nu * state.ζ)
+                    f0s[is, μ] += Avec_pref[i] * O[1, 3] * (conj(vq1[i, 2])*conj(vq2[i, 1]) + conj(vq1[i, 1])*conj(vq2[i, 2]) )  / (√Nu * state.ζ)
                 end
             end
 
