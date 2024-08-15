@@ -113,13 +113,14 @@ function modified_lanczos_aux!(as, bs, H, f0, niters)
         if abs(bs[j-1]) < 1e-12
             bs[j-1] = 0
             @. f_next = f_curr = 0
+            as[j] = 0
         else
             bs[j-1] /= real(dot(f_prev, f_prev))
+            mul!(f_next, H, f_curr)
+            as[j] = real(dot(f_next, f_curr)) / real(dot(f_curr, f_curr))
+            @. f_next = f_next - as[j] * f_curr - bs[j-1] * f_prev
+            f_prev, f_curr = f_curr, f_prev
         end
-        mul!(f_next, H, f_curr)
-        as[j] = real(dot(f_next, f_curr)) / real(dot(f_curr, f_curr))
-        @. f_next = f_next - as[j] * f_curr - bs[j-1] * f_prev
-        f_prev, f_curr = f_curr, f_prev
     end
 
     return nothing
