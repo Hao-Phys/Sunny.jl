@@ -1,7 +1,9 @@
-function continued_fraction_initial_states(npt::NonPerturbativeTheory, q_reshaped::Vec3, qcom_carts_index::CartesianIndex{3})
+function continued_fraction_initial_states(npt::NonPerturbativeTheory, q, qcom_carts_index::CartesianIndex{3})
     (; swt, two_particle_states, clustersize) = npt
     (; sys, data, observables) = swt
     (; observable_operators) = data
+    cryst = orig_crystal(sys)
+    q_global = cryst.recipvecs * q
 
     num_obs = num_observables(observables)
 
@@ -19,7 +21,8 @@ function continued_fraction_initial_states(npt::NonPerturbativeTheory, q_reshape
 
     Avec_pref = zeros(ComplexF64, Nm)
     for i in 1:Nm
-        Avec_pref[i] = exp(2π*im * dot(q_reshaped, sys.crystal.positions[i]))
+        r_global = global_position(sys, (1,1,1,i))
+        Avec_pref[i] = exp(1im * dot(q_global, r_global))
     end
     
     Vq = npt.Vps[:, :, qcom_carts_index]
@@ -133,15 +136,18 @@ function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64
     Nu1, Nu2, Nu3 = clustersize
     all_qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
     @assert q in all_qs "The momentum is not in the grid."
+
+    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
     q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
     for i in 1:3
         (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
     end
+    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
     q_reshaped = mod.(q_reshaped, 1.0)
     qcom_carts_index = findmin(x -> norm(x - q_reshaped), all_qs)[2]
 
     # Calculate initial states for all observables
-    f0s = continued_fraction_initial_states(npt, q_reshaped, qcom_carts_index)
+    f0s = continued_fraction_initial_states(npt, q, qcom_carts_index)
 
     num_1ps = nbands(npt.swt)
     num_2ps = length(npt.two_particle_states[qcom_carts_index])
@@ -183,15 +189,18 @@ function dssf_continued_fraction_two_particle(npt::NonPerturbativeTheory, q, ωs
     Nu1, Nu2, Nu3 = clustersize
     all_qs = [[i/Nu1, j/Nu2, k/Nu3] for i in 0:Nu1-1, j in 0:Nu2-1, k in 0:Nu3-1]
     @assert q in all_qs "The momentum is not in the grid."
+
+    # the purpose of the code block below is to find the cartesian index of the q_reshpaed ∈ [0, 1)
     q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
     for i in 1:3
         (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
     end
+    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
     q_reshaped = mod.(q_reshaped, 1.0)
     qcom_carts_index = findmin(x -> norm(x - q_reshaped), all_qs)[2]
 
     # Calculate initial states for all observables
-    f0s = continued_fraction_initial_states(npt, q_reshaped, qcom_carts_index)
+    f0s = continued_fraction_initial_states(npt, q, qcom_carts_index)
 
     num_1ps = nbands(swt)
     num_2ps = length(npt.two_particle_states[qcom_carts_index])
