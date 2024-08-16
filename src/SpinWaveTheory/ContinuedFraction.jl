@@ -97,33 +97,35 @@ function continued_fraction_initial_states(npt::NonPerturbativeTheory, q_reshape
 end
 
 function modified_lanczos_aux!(as, bs, H, f0, niters)
-    @assert norm(f0) > 1e-12 "Norm of initial states is too small"
-    f_curr = zeros(ComplexF64, length(f0))
-    f_next = zeros(ComplexF64, length(f0))
+    if norm(f0) < 1e-12
+        as .= 0
+        bs .= 0
+    else
+        f_curr = zeros(ComplexF64, length(f0))
+        f_next = zeros(ComplexF64, length(f0))
 
-    f_prev = copy(f0)
-    mul!(f_next, H, f_prev)
-    as[1] = real(dot(f_next, f_prev)) / real(dot(f_prev, f_prev))
-    @. f_next = f_next - as[1] * f_prev
+        f_prev = copy(f0)
+        mul!(f_next, H, f_prev)
+        as[1] = real(dot(f_next, f_prev)) / real(dot(f_prev, f_prev))
+        @. f_next = f_next - as[1] * f_prev
 
-    for j in 2:niters
-        @. f_curr = f_next
-        bs[j-1] = real(dot(f_curr, f_curr))
-        # If the norm of the current state is too small, we set the state to zero
-        if abs(bs[j-1]) < 1e-12
-            bs[j-1] = 0
-            @. f_next = f_curr = 0
-            as[j] = 0
-        else
-            bs[j-1] /= real(dot(f_prev, f_prev))
-            mul!(f_next, H, f_curr)
-            as[j] = real(dot(f_next, f_curr)) / real(dot(f_curr, f_curr))
-            @. f_next = f_next - as[j] * f_curr - bs[j-1] * f_prev
-            f_prev, f_curr = f_curr, f_prev
+        for j in 2:niters
+            @. f_curr = f_next
+            bs[j-1] = real(dot(f_curr, f_curr))
+            # If the norm of the current state is too small, we set the state to zero
+            if abs(bs[j-1]) < 1e-12
+                bs[j-1] = 0
+                @. f_next = f_curr = 0
+                as[j] = 0
+            else
+                bs[j-1] /= real(dot(f_prev, f_prev))
+                mul!(f_next, H, f_curr)
+                as[j] = real(dot(f_next, f_curr)) / real(dot(f_curr, f_curr))
+                @. f_next = f_next - as[j] * f_curr - bs[j-1] * f_prev
+                f_prev, f_curr = f_curr, f_prev
+            end
         end
     end
-
-    return nothing
 end
 
 function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
