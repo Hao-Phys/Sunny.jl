@@ -115,3 +115,106 @@ function dssf_free_two_particle_continuum(swt::SpinWaveTheory, q, ωs, η::Float
 
     return reshape(Sqω[1], num_corrs, numωs)
 end
+
+"""
+    `α`, `β` are the indices of the observables
+"""
+function dssf_free_two_particle_continuum_component(swt::SpinWaveTheory, q, ωs, η::Float64, α::Int, β::Int; opts...)
+    (; sys, data, observables) = swt
+    (; observable_operators) = data
+    q_reshaped = to_reshaped_rlu(swt.sys, q)
+
+    # Number of atoms in magnetic cell
+    Nm = length(sys.dipoles)
+    # Number of chemical cells in magnetic cell
+    Ncells = Nm / natoms(orig_crystal(sys))
+    # Dimension of Hilbert space
+    N = sys.Ns[1]
+    # Number of quasiparticle modes
+    L = nbands(swt)
+
+    # Get some integer numbers for later use
+    numωs = length(ωs)
+    num_obs = num_observables(observables)
+
+    # Preallocation
+    # H1, V1 for q+k
+    H1 = zeros(ComplexF64, 2L, 2L)
+    V1 = zeros(ComplexF64, 2L, 2L)
+    # H2, V2 for -k
+    H2 = zeros(ComplexF64, 2L, 2L)
+    V2 = zeros(ComplexF64, 2L, 2L)
+
+    Avec_pref = zeros(ComplexF64, Nm)
+    Avec = zeros(ComplexF64, num_obs, L, L)
+    corrs_buf = zeros(ComplexF64, numωs)
+
+    for i = 1:Nm
+        @assert Nm == natoms(sys.crystal)
+        Avec_pref[i] = exp(-2π*im * dot(q_reshaped, sys.crystal.positions[i]))
+    end
+
+    Sqω = hcubature((0,0,0), (1,1,1); opts...) do k_reshaped
+        qpk_reshaped = q_reshaped + k_reshaped
+        if sys.mode == :SUN
+            swt_hamiltonian_SUN!(H1, swt, qpk_reshaped)
+            swt_hamiltonian_SUN!(H2, swt, -k_reshaped)
+        else
+            @assert sys.mode in (:dipole, :dipole_large_S)
+            swt_hamiltonian_dipole!(H1, swt, qpk_reshaped)
+            swt_hamiltonian_dipole!(H2, swt, -k_reshaped)
+        end
+
+        disp1 = bogoliubov!(V1, H1)
+        disp2 = bogoliubov!(V2, H2)
+
+        # Fill the buffers with zeros
+        Avec .= 0.0
+        corrs_buf .= 0.0
+
+        if sys.mode == :SUN
+            for band1 = 1:L
+                v1 = reshape(view(V1, :, band1), N-1, Nm, 2)
+                for band2 = 1:L
+                    v2 = reshape(view(V2, :, band2), N-1, Nm, 2)
+                    for i = 1:Nm
+                        for μ = 1:num_observables(observables)
+                            @views O = observable_operators[:, :, μ, i]
+                            for α = 1:N-1
+                                for β = 1:N-1
+                                    Avec[μ, band1, band2] += Avec_pref[i] * (O[α, β] - δ(α, β) * O[N, N]) * (v1[α, i, 2]*v2[β, i, 1] + v1[β, i, 1]*v2[α, i, 2])
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        else
+            @assert sys.mode in (:dipole, :dipole_large_S)
+            for band1 = 1:L
+                v1 = reshape(view(V1, :, band1), Nm, 2)
+                for band2 = 1:L
+                    v2 = reshape(view(V2, :, band2), Nm, 2)
+                    for i = 1:Nm
+                        for μ = 1:num_observables(observables)
+                            @views O = observable_operators[:, :, μ, i]
+                            Avec[μ, band1, band2] += Avec_pref[i] * O[1, 3] * (v1[i, 2]*v2[i, 1] + v1[i, 1]*v2[i, 2])
+                        end
+                    end
+                end
+            end
+        end
+
+        for (iω, ω) in enumerate(ωs)
+            for band1 = 1:L
+                for band2 = 1:L
+                    corrs_buf[iω] += Avec[α, band1, band2] * conj(Avec[β, band1, band2]) * lorentzian(ω-disp1[band1]-disp2[band2], η) / Ncells
+                end
+            end
+        end
+
+        return SVector{numωs}(corrs_buf)
+    end
+
+    return Sqω[1]
+end
