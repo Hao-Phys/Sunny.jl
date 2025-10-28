@@ -240,6 +240,8 @@ function solve_self_consistent_nlswt!(scnlswt::SelfConsistentNLSWT; mean_field_v
     ret = nlsolve(sce_eqn!, x0; nlsolve_opts...)
     !converged(ret) && @warn "Self-consistent NLSWT converged to a solution with residual $(ret.residual_norm)"
     update_mean_field_values!(scnlswt, ret.zero)
+
+    return ret.residual_norm
 end
 
 # TODO: Have a common interface with LSWT module for all code below
