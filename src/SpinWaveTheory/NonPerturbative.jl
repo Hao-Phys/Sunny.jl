@@ -299,9 +299,10 @@ function q_space_path_npt(npt::NonPerturbativeTheory, qs; labels=nothing)
         q_reshaped_e = reshaped_q_res[i+1].q_reshaped_closest
         Δq_reshaped = q_reshaped_e - q_reshaped_s
         Δns = round.(Int, abs.(Δq_reshaped .* collect(clustersize)))
-        Δn = gcd(gcd(Δns[1], Δns[2]), Δns[3]) + 1
-        for j in 0:Δn-1
-            q_reshaped = q_reshaped_s + j/(Δn-1) * Δq_reshaped
+        Δn = gcd(gcd(Δns[1], Δns[2]), Δns[3])
+        j_end = i == length_qs - 1 ? Δn : Δn - 1
+        for j in 0:j_end
+            q_reshaped = q_reshaped_s + j/Δn * Δq_reshaped
             q = to_original_rlu(npt.swt.sys, q_reshaped)
             push!(path, q)
         end
