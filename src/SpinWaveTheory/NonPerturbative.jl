@@ -243,3 +243,74 @@ function truncated_hilbert_space_dim(npt::NonPerturbativeTheory)
     dim = num_1ps + num_2ps
     return dim, num_1ps, num_2ps
 end
+
+struct ReshapedQResult
+    q_reshaped_closest :: Vec3
+    q_index :: CartesianIndex{3}
+end
+
+# Given q_reshaped in reciprocal lattice units (RLU) for the possibly-reshaped crystal, return a
+# q in RLU for the original crystal.
+function to_original_rlu(sys::System{N}, q_reshaped) where N
+    return orig_crystal(sys).recipvecs \ (sys.crystal.recipvecs * q_reshaped)
+end
+
+# Given `q` in reciprocal lattice units (RLU) for the original crystal and the `npt` object, return to the `ReshapedQResult` which contains:
+# - `q_reshaped_closest`: the reshaped momentum in RLU that is closest to the input momentum
+# - `q_index`: the Cartesian index of the closest momentum in the non-perturbative grid
+function to_reshaped_q_npt(npt::NonPerturbativeTheory, q)
+    (; qs) = npt
+    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
+    q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
+    for i in 1:3
+        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
+    end
+    # Fold the reshaped wave vector within in first magnetic Brillouin zone
+    q_reshaped_folded = mod.(q_reshaped, 1.0)
+    G_mag = q_reshaped - q_reshaped_folded
+    for i in 1:3
+        (abs(q_reshaped_folded[i]) < 1e-12) && (q_reshaped_folded = setindex(q_reshaped_folded, 0.0, i))
+    end
+    norm_diff, q_index = findmin(x -> norm(x - q_reshaped_folded), qs)
+
+    q_reshaped_closest = qs[q_index] + G_mag
+
+    if norm_diff > 1e-12
+        q_closest = to_original_rlu(npt.swt.sys, q_reshaped_closest)
+        Δq = norm(orig_crystal(npt.swt.sys).recipvecs * (q - q_closest))
+        @warn "The requested momentum $q is not available in the set of `qs` used for the NPT calculation. The closest available momentum $q_closest is used instead (‖Δq‖ = $Δq)."
+    end
+
+    return ReshapedQResult(q_reshaped_closest, q_index)
+end
+
+function q_space_path_npt(npt::NonPerturbativeTheory, qs; labels=nothing)
+    (; clustersize) = npt
+
+    reshaped_q_res = [to_reshaped_q_npt(npt, q) for q in qs]
+    length_qs = length(qs)
+
+    path = Vec3[]
+    markers = Int[]
+
+    for i in 1:length_qs - 1
+        push!(markers, length(path)+1)
+        q_reshaped_s = reshaped_q_res[i].q_reshaped_closest
+        q_reshaped_e = reshaped_q_res[i+1].q_reshaped_closest
+        Δq_reshaped = q_reshaped_e - q_reshaped_s
+        Δns = round.(Int, abs.(Δq_reshaped .* collect(clustersize)))
+        Δn = gcd(gcd(Δns[1], Δns[2]), Δns[3]) + 1
+        for j in 0:Δn-1
+            q_reshaped = q_reshaped_s + j/(Δn-1) * Δq_reshaped
+            q = to_original_rlu(npt.swt.sys, q_reshaped)
+            push!(path, q)
+        end
+    end
+
+    push!(markers, length(path))
+
+    # TODO: in the future, when rebasing to the newest Sunny, change `fractional_vec3_to_string` to `vec3_to_string`
+    labels = @something labels fractional_vec3_to_string.(qs)
+    xticks = (markers, labels)
+    return QPath(path, xticks)
+end

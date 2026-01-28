@@ -133,25 +133,11 @@ function modified_lanczos_aux!(as, bs, H, f0, niters)
 end
 
 function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
-    (; clustersize, swt, qs) = npt
+    (; clustersize, swt) = npt
     Nu1, Nu2, Nu3 = clustersize
     Nu = Nu1 * Nu2 * Nu3
 
-    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
-    q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
-    for i in 1:3
-        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
-    end
-    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
-    q_reshaped = mod.(q_reshaped, 1.0)
-    for i in 1:3
-        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
-    end
-    q_index = findmin(x -> norm(x - q_reshaped), qs)[2]
-
-    if norm(qs[q_index] - q_reshaped) > 1e-12
-        @warn "The momentum is not in the grid. The closest momentum in the grid is $(qs[q_index])."
-    end
+    q_index = to_reshaped_q_npt(npt, q).q_index
 
     # Calculate initial states for all observables
     f0s = continued_fraction_initial_states(npt, q, q_index)
@@ -221,25 +207,11 @@ function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::
     # Calculate the dynamical spin structure factor using continued fraction method
     # The function returns the intensities for all observables
     # The function is not parallelized yet
-    (; clustersize, swt, qs) = npt
+    (; clustersize, swt) = npt
     Nu1, Nu2, Nu3 = clustersize
     Nu = Nu1 * Nu2 * Nu3
 
-    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
-    q_reshaped = to_reshaped_rlu(npt.swt.sys, q)
-    for i in 1:3
-        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
-    end
-    # Here we mod one. This is because the q_reshaped is in the reciprocal lattice unit, and we need to find the closest q in the grid.
-    q_reshaped = mod.(q_reshaped, 1.0)
-    for i in 1:3
-        (abs(q_reshaped[i]) < 1e-12) && (q_reshaped = setindex(q_reshaped, 0.0, i))
-    end
-    q_index = findmin(x -> norm(x - q_reshaped), qs)[2]
-
-    if norm(qs[q_index] - q_reshaped) > 1e-12
-        @warn "The momentum is not in the grid. The closest momentum in the grid is $(qs[q_index])."
-    end
+    q_index = to_reshaped_q_npt(npt, q).q_index
 
     # Calculate initial states for all observables
     f0s = continued_fraction_initial_states(npt, q, q_index)
