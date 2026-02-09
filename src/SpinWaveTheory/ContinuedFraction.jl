@@ -132,7 +132,9 @@ function modified_lanczos_aux!(as, bs, H, f0, niters)
     end
 end
 
-function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
+# Assemble Lanczos tridiagonal coefficients for the one- and two-particle effective Hamiltonian at the chosen q-point.
+# Columns in `as` and `bs` collect the diagonal spin observables (Sx, Sy, Sz) followed by their nearest sums (Sx+Sy, Sy+Sz, Sz+Sx); `norm2s` records the norms of each associated initial vector.
+function modified_lanczos(npt::NonPerturbativeTheory, q, niters::Int; single_particle_correction::Bool=true, opts...)
     (; clustersize, swt) = npt
     Nu1, Nu2, Nu3 = clustersize
     Nu = Nu1 * Nu2 * Nu3
@@ -156,24 +158,87 @@ function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64
     one_to_two_particle_hamiltonian!(H12ps, npt, q_index)
     @. H21ps = copy(H12ps')
 
-    # At this moment, we only support the correlation function for the same observable
-    as = zeros(niters)
-    bs = zeros(niters-1)
+    as = zeros(niters, 6)
+    bs = zeros(niters-1, 6)
+    norm2s = zeros(6)
 
     num_obs = num_observables(swt.measure)
-    ret = zeros(length(ωs), num_obs)
     for i in 1:num_obs
+        # The diagonal elements, i.e., Sx, Sy, Sz
         f0 = view(f0s, :, i)
-        modified_lanczos_aux!(as, bs, H, f0, niters)
+        as_i = view(as, :, i)
+        bs_i = view(bs, :, i)
+        modified_lanczos_aux!(as_i, bs_i, H, f0, niters)
+        norm2s[i] = norm2(f0)
+        # The off-diagonal elements, i.e., Sx+Sy, Sy+Sz, Sz+Sx
+        f1 = view(f0s, :, mod1(i+1, num_obs))
+        as_i_plus = view(as, :, i+3)
+        bs_i_plus = view(bs, :, i+3)
+        modified_lanczos_aux!(as_i_plus, bs_i_plus, H, f0+f1, niters)
+        norm2s[i+3] = norm2(f0+f1)
+    end
+
+    return as, bs, norm2s
+end
+
+# Caculate the (x, x), (y, y), (z, z) and (x+y, x+y), (y+z, y+z), (z+x, z+x) components of the dynamical spin structure factor using the continued fraction method.
+function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
+    as, bs, norm2s = modified_lanczos(npt, q, niters; single_particle_correction, opts...)
+    (; swt) = npt
+
+    ret_buff = zeros(length(ωs), 6)
+    num_obs = num_observables(swt.measure)
+    for i in 1:num_obs
+        as_i = view(as, :, i)
+        bs_i = view(bs, :, i)
         for (iω, ω) in enumerate(ωs)
             z = ω + 1im*η
-            G = z - as[niters]
+            G = z - as_i[niters]
             for j in niters-1:-1:1
-                A = bs[j]^2 / G
-                G = z - as[j] - A
+                A = bs_i[j]^2 / G
+                G = z - as_i[j] - A
             end
-            G = inv(G) * real(dot(f0, f0))
-            ret[iω, i] = - imag(G) / π
+            G = inv(G) * norm2s[i]
+            ret_buff[iω, i] = - imag(G) / π
+        end
+        # Off-diagonal elements
+        as_i_plus = view(as, :, i+3)
+        bs_i_plus = view(bs, :, i+3)
+        for (iω, ω) in enumerate(ωs)
+            z = ω + 1im*η
+            G = z - as_i_plus[niters]
+            for j in niters-1:-1:1
+                A = bs_i_plus[j]^2 / G
+                G = z - as_i_plus[j] - A
+            end
+            G = inv(G) * norm2s[i+3]
+            ret_buff[iω, i+3] = - imag(G) / π
+        end
+    end
+
+    return ret_buff
+end
+
+function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
+    ret_buff = dssf_continued_fraction(npt, q, ωs, η, niters; single_particle_correction, opts...)
+    # Apply the neutron polarization factor
+    (; swt) = npt
+    cryst = orig_crystal(swt.sys)
+    q_global = cryst.recipvecs * q
+    q2 = norm2(q_global)
+
+    ret = zeros(length(ωs))
+    num_obs = num_observables(swt.measure)
+    if q2 < 1e-6
+        # Later we may add the 2/3 factor to be consistent with the Sunny main
+        for i in 1:num_obs
+            @. ret += ret_buff[:, i]
+        end
+    else
+        for i in 1:num_obs
+            @. ret += ret_buff[:, i] * (1 - q_global[i]^2 / q2)
+            # The off-diagonal part is given as follows: SᵃSᵇ + SᵇSᵃ = (Sᵃ+Sᵇ)(Sᵃ+Sᵇ) - SᵃSᵃ - SᵇSᵇ, where b = mod1(a+1, 3) in our convention.
+            @. ret -= (ret_buff[:, i+3] - ret_buff[:, i] - ret_buff[:, mod1(i+1, 3)]) * q_global[i] * q_global[mod1(i+1, 3)] / q2
         end
     end
 
@@ -201,88 +266,4 @@ function calculate_renormalized_vacuum(npt::NonPerturbativeTheory; single_partic
     hermitianpart!(H)
     _, V = eigen(H; sortby=identity)
     return V[:, 1]
-end
-
-function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
-    # Calculate the dynamical spin structure factor using continued fraction method
-    # The function returns the intensities for all observables
-    # The function is not parallelized yet
-    (; clustersize, swt) = npt
-    Nu1, Nu2, Nu3 = clustersize
-    Nu = Nu1 * Nu2 * Nu3
-
-    q_index = to_reshaped_q_npt(npt, q).q_index
-
-    # Calculate initial states for all observables
-    f0s = continued_fraction_initial_states(npt, q, q_index)
-
-    num_1ps = nbands(swt)
-    # Number of two-particle states is given by the following combinatorial formula:
-    num_2ps = Int(binomial(Nu*num_1ps+2-1, 2) / Nu)
-
-    H = zeros(ComplexF64, num_1ps+num_2ps, num_1ps+num_2ps)
-    H1ps = view(H, 1:num_1ps, 1:num_1ps)
-    H2ps = view(H, num_1ps+1:num_1ps+num_2ps, num_1ps+1:num_1ps+num_2ps)
-    H12ps = view(H, 1:num_1ps, num_1ps+1:num_1ps+num_2ps)
-    H21ps = view(H, num_1ps+1:num_1ps+num_2ps, 1:num_1ps)
-    one_particle_hamiltonian!(H1ps, npt, q_index; single_particle_correction, opts...)
-    two_particle_hamiltonian!(H2ps, npt, q_index)
-    one_to_two_particle_hamiltonian!(H12ps, npt, q_index)
-    @. H21ps = copy(H12ps')
-
-    # At this moment, we only support the correlation function for the same observable
-    as = zeros(niters)
-    bs = zeros(niters-1)
-
-    ret_buff = zeros(length(ωs), 6)
-
-    num_obs = num_observables(swt.measure)
-    for i in 1:num_obs
-        # Diagonal elements
-        f0 = view(f0s, :, i)
-        modified_lanczos_aux!(as, bs, H, f0, niters)
-        for (iω, ω) in enumerate(ωs)
-            z = ω + 1im*η
-            G = z - as[niters]
-            for j in niters-1:-1:1
-                A = bs[j]^2 / G
-                G = z - as[j] - A
-            end
-            G = inv(G) * real(dot(f0, f0))
-            ret_buff[iω, i] = - imag(G) / π
-        end
-        # Off-diagonal elements
-        f1 = view(f0s, :, mod1(i+1, num_obs))
-        modified_lanczos_aux!(as, bs, H, f0+f1, niters)
-        for (iω, ω) in enumerate(ωs)
-            z = ω + 1im*η
-            G = z - as[niters]
-            for j in niters-1:-1:1
-                A = bs[j]^2 / G
-                G = z - as[j] - A
-            end
-            G = inv(G) * real(dot(f0+f1, f0+f1))
-            ret_buff[iω, i+3] = - imag(G) / π
-        end
-    end
-
-    # Apply the neutron polarization factor
-    cryst = orig_crystal(swt.sys)
-    q_global = cryst.recipvecs * q
-    q2 = norm2(q_global)
-
-    ret = zeros(length(ωs))
-    if q2 < 1e-6
-        # Later we may add the 2/3 factor to be consistent with the Sunny main
-        for i in 1:num_obs
-            @. ret += ret_buff[:, i]
-        end
-    else
-        for i in 1:num_obs
-            @. ret += ret_buff[:, i] * (1 - q_global[i]^2 / q2)
-            @. ret -= (ret_buff[:, i+3] - ret_buff[:, i] - ret_buff[:, mod1(i+1, 3)]) * q_global[i] * q_global[mod1(i+1, 3)] / q2
-        end
-    end
-
-    return ret
 end
