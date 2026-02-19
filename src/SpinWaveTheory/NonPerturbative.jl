@@ -236,10 +236,10 @@ Calculate the dimension of the truncated Hilbert space used in the non-perturbat
 function truncated_hilbert_space_dim(npt::NonPerturbativeTheory)
     (; clustersize, swt) = npt
     num_1ps = nbands(swt)
-    @info "Number of single particle states per center-of-mass momentum is" num_1ps
+    # @info "Number of single particle states per center-of-mass momentum is" num_1ps
     Nu = prod(clustersize)
     num_2ps = Int(binomial(num_1ps*Nu+2-1, 2) / Nu)
-    @info "Number of two particle states per center-of-mass momentum is" num_2ps
+    # @info "Number of two particle states per center-of-mass momentum is" num_2ps
     dim = num_1ps + num_2ps
     return dim, num_1ps, num_2ps
 end
