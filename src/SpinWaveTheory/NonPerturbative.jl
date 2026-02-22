@@ -310,8 +310,7 @@ function q_space_path_npt(npt::NonPerturbativeTheory, qs; labels=nothing)
 
     push!(markers, length(path))
 
-    # TODO: in the future, when rebasing to the newest Sunny, change `fractional_vec3_to_string` to `vec3_to_string`
-    labels = @something labels fractional_vec3_to_string.(qs)
+    labels = @something labels vec3_to_string.(qs)
     xticks = (markers, labels)
     return QPath(path, xticks)
 end
