@@ -1,38 +1,94 @@
 """
-    SpinWaveTheoryKPM(sys::System; measure, regularization=1e-8, tol)
+    SpinWaveTheoryKPM(sys::System; measure, regularization=1e-8, tol=nothing,
+                      niters=nothing, method=:lanczos)
 
-A variant of [`SpinWaveTheory`](@ref) that uses the kernel polynomial method
-(KPM) to perform [`intensities`](@ref) calculations [1]. Instead of explicitly
-diagonalizing the dynamical matrix, KPM approximates intensities using
-polynomial expansion truncated at order ``M``. The reduces the computational
-cost from ``𝒪(N^3)`` to ``𝒪(N M)``, which is favorable for large system sizes
-``N``.
+A variant of [`SpinWaveTheory`](@ref) that estimates [`intensities`](@ref) using
+iterated matrix-vector products. By avoiding direct matrix diagonalization, this
+method reduces computational cost from cubic to linear-scaling in the system
+size ``N``. Large system sizes can arise, e.g., for models of quenched disorder
+or models with nearly incommensurate ordering wavevectors.
 
-The polynomial order ``M`` will be determined from the line broadening kernel
-and the specified error tolerance `tol`. Specifically, for each wavevector,
-``M`` scales like the spectral bandwidth of excitations, divided by the energy
-resolution of the broadening kernel, times the negative logarithm of `tol`.
+Energy resolution is controlled by the dimensionless `tol` parameter. Common
+choices are `tol=0.05` (more speed) or `0.01` (more accuracy). This will
+determine the number of iterations as `M ≈ -2 log10(tol) Δϵ / fwhm`, where `Δϵ`
+is the estimated spectral bandwidth of excitations and `fwhm` is the full width
+at half maximum of the user-supplied broadening `kernel`. Computational cost
+scales like ``𝒪(N M + M^2)``. Use `niters` instead of `tol` to directly specify
+``M``.
 
-The error tolerance `tol` should be tuned empirically for each calculation.
-Reasonable starting points are `1e-1` (more speed) or `1e-2` (more accuracy).
+!!! warning "Intensity loss at low-energy excitations"
 
-!!! warning "Missing intensity at small quasi-particle energy"  
-    The KPM-calculated intensities are unreliable at small energies ``ω``. In
-    particular, KPM may mask intensities that arise near the Goldstone modes of
-    an ordered state with continuous symmetry.
+    Not all numerical artifacts can be resolved by reducing `tol`. In particular,
+    there may be unavoidable intensity loss at low-energy excitations, e.g., near
+    Goldstone modes. This type of error originates from finite numerical precision
+    and ill-conditioning of the dynamical matrix.
+
+!!! tip "Consider `SampledCorrelations` when calculating powder averages"
+
+    Spin wave theory requires an independent calculation for each ``𝐪`` point of
+    interest. Consequently, it can be very slow to sample a 3D volume of
+    ``𝐪``-space, e.g., as required for a [`powder_average`](@ref). A compelling
+    alternative may be [`SampledCorrelations`](@ref). It uses real-time spin
+    dynamics to calculate structure factor data over the entire 3D grid of
+    commensurate ``𝐪``-vectors in one shot. This may provide a considerable speedup
+    at the cost of: limited ``𝐪``-space resolution and stochastic error due to
+    statistical sampling.
+
+Two choices of `method` are possible. Lanczos is the default because it achieves
+appears near-optimal accuracy at fixed iterations ``M`` [1, 2] and can detect
+energetic instabilities. The alternative, `method=:kpm`, implements the Kernel
+Polynomial Method as described in Ref. [3], which may be of historical interest.
 
 ## References
 
-1. [H. Lane et al., _Kernel Polynomial Method for Linear Spin Wave Theory_
+1. [T. Chen, _The Lanczos algorithm for matrix functions: a handbook for
+   scientists_ (2024) [arXiv:2410.11090]](https://arxiv.org/abs/2410.11090).
+2. [N. Amsel, T. Chen, A. Greenbaum, C. Musco, C. Musco, _Near-Optimal
+   Approximation of Matrix Functions by the Lanczos Method_ (2023)
+   [arXiv:2303.03358]](https://arxiv.org/abs/2303.03358).
+3. [H. Lane et al., _Kernel Polynomial Method for Linear Spin Wave Theory_
    (2023) [arXiv:2312.08349]](https://arxiv.org/abs/2312.08349).
 """
 struct SpinWaveTheoryKPM
     swt :: SpinWaveTheory
     tol :: Float64
-    lanczos_iters :: Int
+    niters :: Int
+    niters_bounds :: Int # Number of Lanczos iterations to bound spectrum
+    method :: Symbol
 
-    function SpinWaveTheoryKPM(sys::System; measure::Union{Nothing, MeasureSpec}, regularization=1e-8, tol, lanczos_iters=15)
-        return new(SpinWaveTheory(sys; measure, regularization), tol, lanczos_iters)
+    function SpinWaveTheoryKPM(sys::System; measure::Union{Nothing, MeasureSpec}, regularization=1e-8,
+                               tol=nothing, niters=nothing, niters_bounds=10, method=:lanczos)
+        xor(isnothing(tol), isnothing(niters)) || error("Exactly one of `tol` or `niters` must be specified.")
+        method in (:lanczos, :kpm) || error("The method must be one of :lanczos or :kpm")
+        tol = @something tol 1.0
+        niters = @something niters 0
+        0 < tol <= 1 || error("Require 0 < tol <= 1")
+        niters >= 0 || error("Require niters >= 0")
+        return new(SpinWaveTheory(sys; measure, regularization), tol, niters, niters_bounds, method)
+    end
+end
+
+function Base.show(io::IO, ::MIME"text/plain", swt_kry::SpinWaveTheoryKPM)
+    (; swt) = swt_kry
+    printstyled(io, "SpinWaveTheoryKPM ", mode_to_str(swt.sys), "\n"; bold=true, color=:underline)
+    println(io, "  ", natoms(swt.sys.crystal), " atoms")
+end
+
+function intensities(swt_kry::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
+    qpts = convert(AbstractQPoints, qpts)
+    data = zeros(eltype(swt_kry.swt.measure), length(energies), size(qpts.qs)...)
+    return intensities!(data, swt_kry, qpts; energies, kernel, kT, verbose)
+end
+
+function intensities!(data, swt_kry::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
+    qpts = convert(AbstractQPoints, qpts)
+    @assert size(data) == (length(energies), size(qpts.qs)...)
+    (; method) = swt_kry
+    if method == :lanczos
+        intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose)
+    else
+        @assert method == :kpm
+        intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
     end
 end
 
@@ -56,19 +112,17 @@ function set_moments!(moments, measure, u, α)
     end
 end
 
+function intensities_kpm!(data, swt_kry, qpts; energies, kernel, kT, verbose)
+    iszero(kT) || error("The :kpm backend does not support finite kT")
 
-function intensities!(data, swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
-    iszero(kT) || error("KPM does not yet support finite kT")
-    qpts = convert(AbstractQPoints, qpts)
-
-    (; swt, tol, lanczos_iters) = swt_kpm
+    (; swt, tol, niters, niters_bounds) = swt_kry
     (; sys, measure) = swt
     cryst = orig_crystal(sys)
 
     isnothing(kernel.fwhm) && error("Cannot determine the kernel fwhm")
 
     @assert eltype(data) == eltype(measure)
-    @assert size(data) == (length(energies), length(qpts.qs))
+    @assert size(data) == (length(energies), size(qpts.qs)...)
 
     Na = nsites(sys)
     Ncells = Na / natoms(cryst)
@@ -86,7 +140,8 @@ function intensities!(data, swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::
     α1 = zeros(ComplexF64, Nobs, 2L)
     α2 = zeros(ComplexF64, Nobs, 2L)
 
-    for (iq, q) in enumerate(qpts.qs)
+    for iq in CartesianIndices(qpts.qs)
+        q = qpts.qs[iq]
         q_reshaped = to_reshaped_rlu(sys, q)
         q_global = cryst.recipvecs * q
 
@@ -122,13 +177,21 @@ function intensities!(data, swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::
             end
         end
 
-        # Bound eigenvalue magnitudes and determine order of polynomial
-        # expansion
-
-        lo, hi = eigbounds(swt, q_reshaped, lanczos_iters)
+        # Find extreme eigenvalues and rescaling factor
+        lo, hi = eigbounds(swt, q_reshaped, niters_bounds)
         γ = 1.1 * max(abs(lo), hi)
-        accuracy_factor = max(-3*log10(tol), 1)
-        M = round(Int, accuracy_factor * max(2γ / kernel.fwhm, 3))
+        Δϵ = hi - lo
+
+        # Determine order of polynomial expansion
+        if niters > 0
+            @assert tol == 1
+            M = niters
+        else
+            @assert 0 < tol <= 1
+            resolution = (kernel.fwhm/2) / (-log10(tol))
+            M = max(round(Int, Δϵ/resolution), 2)
+        end
+
         resize!(moments, Ncorr, M)
 
         if verbose
@@ -155,19 +218,13 @@ function intensities!(data, swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::
         plan = FFTW.plan_r2r!(buf, FFTW.REDFT10)
 
         for (iω, ω) in enumerate(energies)
-            # Ideally we would use thermal_prefactor instead of
-            # thermal_prefactor_zero to allow for finite temperature effects.
-            # Unfortunately, the Bose function's 1/x singularity introduces
-            # divergence of the Chebyshev expansion integrals, and is tricky to
-            # regularize. At kT=0, the occupation is a Heaviside step function.
-            # To mitigate ringing artifacts associated with truncated Chebyshev
-            # approximation, introduce smoothing on the energy scale σ. This is
-            # the polynomial resolution scale times a prefactor that grows like
-            # sqrt(accuracy) to reduce lingering ringing artifacts. See "AFM
-            # KPM" for a test case where the smoothing degrades accuracy, and
-            # "Disordered system with KPM" for an illustration of how smoothing
-            # affects intensities at small ω.
-            σ = sqrt(accuracy_factor) * (γ / M)
+            # Unlike Lanczos, KPM requires a lot of hacks here. Restrict to kT=0
+            # to avoid the 1/x divergence of thermal_prefactor(x). To mitigate
+            # ringing artifacts, introduce a smoothing energy scale σ. This is
+            # the energy resolution (Δϵ / M) times a prefactor that grows slowly
+            # with decreasing error tolerance, to help control artifacts.
+            accuracy_prefactor = 2 * max(sqrt(-log10(tol)), 1)
+            σ = accuracy_prefactor * (Δϵ / M)
             thermal_prefactor_zero(x) = (tanh(x / σ) + 1) / 2
             f(x) = kernel(x, ω) * thermal_prefactor_zero(x)
             coefs = cheb_coefs!(M, f, (-γ, γ); buf, plan)
@@ -182,8 +239,145 @@ function intensities!(data, swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::
     return Intensities(cryst, qpts, collect(energies), data)
 end
 
-function intensities(swt_kpm::SpinWaveTheoryKPM, qpts; energies, kernel::AbstractBroadening, kT=0.0, verbose=false)
-    qpts = convert(AbstractQPoints, qpts)
-    data = zeros(eltype(swt_kpm.swt.measure), length(energies), length(qpts.qs))
-    return intensities!(data, swt_kpm, qpts; energies, kernel, kT, verbose)
+function intensities_lanczos!(data, swt_kry, qpts; energies, kernel, kT, verbose)
+    (; swt, tol, niters, niters_bounds) = swt_kry
+    (; sys, measure) = swt
+    cryst = orig_crystal(sys)
+
+    isnothing(kernel.fwhm) && error("Cannot determine the kernel fwhm")
+
+    @assert eltype(data) == eltype(measure)
+    @assert size(data) == (length(energies), size(qpts.qs)...)
+    fill!(data, zero(eltype(data)))
+
+    Na = nsites(sys)
+    Ncells = Na / natoms(cryst)
+    Nf = nflavors(swt)
+    L = Nf*Na
+    Avec_pref = zeros(ComplexF64, Na)
+
+    Nobs = size(measure.observables, 1)
+    Ncorr = length(measure.corr_pairs)
+    corrbuf = zeros(ComplexF64, Ncorr)
+
+    u = zeros(ComplexF64, 2L, Nobs)
+    v = zeros(ComplexF64, 2L)
+    Sv = zeros(ComplexF64, 2L)
+
+    for iq in CartesianIndices(qpts.qs)
+        q = qpts.qs[iq]
+        q_reshaped = to_reshaped_rlu(sys, q)
+        q_global = cryst.recipvecs * q
+
+        # Represent each local observable A(q) as a complex vector u(q) that
+        # denotes a linear combination of HP bosons.
+
+        for i in 1:Na
+            r = sys.crystal.positions[i]
+            ff = get_swt_formfactor(measure, 1, i)
+            Avec_pref[i] = exp(2π*im * dot(q_reshaped, r))
+            Avec_pref[i] *= compute_form_factor(ff, norm2(q_global))
+        end
+
+        if sys.mode == :SUN
+            (; observables_localized) = swt.data::SWTDataSUN
+            N = sys.Ns[1]
+            for μ in 1:Nobs, i in 1:Na
+                O = observables_localized[μ, i]
+                for f in 1:Nf
+                    u[f + (i-1)*Nf, μ]     = Avec_pref[i] * O[f, N]
+                    u[f + (i-1)*Nf + L, μ] = Avec_pref[i] * O[N, f]
+                end
+            end
+        else
+            @assert sys.mode in (:dipole, :dipole_uncorrected)
+            (; sqrtS, observables_localized) = swt.data::SWTDataDipole
+            for μ in 1:Nobs, i in 1:Na
+                O = observables_localized[μ, i]
+                u[i, μ]   = Avec_pref[i] * (sqrtS[i] / √2) * (O[1] + im*O[2])
+                u[i+L, μ] = Avec_pref[i] * (sqrtS[i] / √2) * (O[1] - im*O[2])
+            end
+        end
+
+        # Perform Lanczos calculation
+ 
+        # w = Ĩ v
+        function mulA!(w, v)
+            @views w[1:L]    = +v[1:L]
+            @views w[L+1:2L] = -v[L+1:2L]
+            return w
+        end
+
+        # w = D v
+        function mulS!(w, v)
+            mul_dynamical_matrix!(swt, reshape(w, 1, :), reshape(v, 1, :), [q_reshaped])
+            return w
+        end
+
+        # Determine bounds on either the number of iterations or the resolution
+        if niters > 0
+            @assert tol == 1
+            min_iters = niters
+            resolution = Inf
+        else
+            @assert 0.0 < tol <= 1
+            min_iters = niters_bounds
+            resolution = (kernel.fwhm/2) / (-log10(tol))
+        end
+
+        for ξ in 1:Nobs
+            # Don't accumulate observables that are zero
+            iszero(view(u, :, ξ)) && continue
+
+            mulA!(v, view(u, :, ξ))
+            mulS!(Sv, v)
+            c = sqrt(real(Sv' * v))
+            v ./= c
+            tridiag, lhs_adj_Q = try
+                lanczos(mulA!, mulS!, v; lhs=u, min_iters, resolution, verbose)
+            catch e
+                if e.msg == "S is not a positive definite measure"
+                    rethrow(ErrorException("Not an energy-minimum; wavevector q = $q unstable."))
+                else
+                    rethrow()
+                end
+            end
+
+            (; values, vectors) = try
+                eigen(tridiag)
+            catch e
+                # Fallback for https://github.com/JuliaLang/LinearAlgebra.jl/issues/1491
+                eigen(Hermitian(collect(tridiag)))
+            end
+
+            for (iω, ω) in enumerate(energies)
+                f(x) = kernel(x, ω) * thermal_prefactor(x; kT)
+
+                corr_ξ = c * lhs_adj_Q * vectors * Diagonal(f.(values)) * (vectors'[:, 1])
+
+                # This step assumes that each local observable in the
+                # correlation is Hermitian. In this case, bare correlations
+                # should be symmetric, C[μ, ν] = C[ν, μ]*. The Lanczos
+                # approximation C̃ breaks this symmetry. Restore it by looping
+                # over ξ in 1:Nobs and accumulate Lanczos data C̃[:, ξ] in a
+                # symmetric way. Accumulate C̃[μ, ξ] into C[μ, ν] if ξ = ν. Also
+                # accumulate C̃[ν, ξ]* into C[μ, ν] if ξ = μ. A factor of 1/2
+                # avoids double counting. In the special case that μ = ν, this
+                # assigns real(C̃[μ, μ]) to C[μ, μ] only once.
+                corrbuf .= 0
+                for (i, (μ, ν)) in enumerate(measure.corr_pairs)
+                    ξ == ν && (corrbuf[i] += (1/2) *     (corr_ξ[μ] / Ncells))
+                    ξ == μ && (corrbuf[i] += (1/2) * conj(corr_ξ[ν] / Ncells))
+                end
+
+                # This step assumes that combiner is linear, so that it is valid
+                # to move the ξ loop outside the data accumulation. One could
+                # relax this assumption by preallocating an array of size (Nω,
+                # Ncorr) to accumulate into corrbuf prior to calling combiner.
+                data[iω, iq] += measure.combiner(q_global, corrbuf)
+            end
+        end
+    end
+
+    return Intensities(cryst, qpts, collect(energies), data)
 end

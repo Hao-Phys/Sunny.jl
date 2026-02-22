@@ -142,63 +142,63 @@ set_onsite_coupling!(sys, S -> -D*S[3]^2, 1)
 
 # ### Finding the ground state
 
-# This model has been fitted so that energy minimization yields the physically
-# correct ground state. Knowing this, we could set the magnetic configuration
-# manually by calling [`set_dipole!`](@ref) on each site in the system. Another
-# approach, as we will demonstrate, is to search for the ground-state via
-# [`minimize_energy!`](@ref).
+# The model parameters have already been fitted so that energy minimization
+# yields the physically correct ground state. Knowing this, one could manually
+# set the magnetic configuration by calling [`set_dipole!`](@ref) at each site.
+# Alternatively, Sunny provides tools to interactively search for the ground
+# state.
 #
-# To reduce bias in the search, use [`resize_supercell`](@ref) to create a
-# relatively large system of 4×4×4 chemical cells. Randomize all spins
-# (represented as SU(3) coherent states) and minimize the energy.
+# Use [`resize_supercell`](@ref) to create a relatively large system of 4×4×4
+# chemical cells. Call [`randomize_spins!`](@ref) and [`minimize_energy!`](@ref)
+# in sequence.
 
 sys = resize_supercell(sys, (4, 4, 4))
 randomize_spins!(sys)
 minimize_energy!(sys)
 
-# The positive step-count above indicates successful convergence to a local
-# energy minimum. Defects, however, are visually apparent.
+# Despite successful convergence to a local energy minimum, defects in the spin
+# configuration are visually apparent.
 
 plot_spins(sys; color=[S[3] for S in sys.dipoles])
 
-# One could precisely quantify the Fourier-space static structure factor
-# ``\mathcal{S}(𝐪)`` of this spin configuration using
-# [`SampledCorrelationsStatic`](@ref). For the present purposes, however, it is
-# most convenient to use [`print_wrapped_intensities`](@ref), which effectively
-# averages ``\mathcal{S}(𝐪)`` over all Brillouin zones.
+# Finding the true ground state can be a challenging task. If the system is not
+# too large, a good strategy is repeated randomization and then energy
+# minimization. This particular system might require about 30 minimization runs
+# to find the defect-free ground state.
+#
+# Another tool is [`print_wrapped_intensities`](@ref). It reports weights
+# analogous to the static structure factor ``\mathcal{S}(𝐪)``, but without
+# accounting for phase interference between magnetic sublattices. To calculate
+# the true ``\mathcal{S}(𝐪)``, use instead [`SampledCorrelationsStatic`](@ref).
 
 print_wrapped_intensities(sys)
 
-# The known zero-field energy-minimizing magnetic structure of FeI₂ is a two-up,
-# two-down order. It can be described as a generalized spiral with a single
-# propagation wavevector ``𝐤``. Rotational symmetry allows for three equivalent
-# orientations: ``±𝐤 = [0, -1/4, 1/4]``, ``[1/4, 0, 1/4]``, or
-# ``[-1/4,1/4,1/4]``. Energy minimization of large systems can easily get
-# trapped in a metastable state with competing domains and defects. Nonetheless,
-# `print_wrapped_intensities` shows that a non-trivial fraction of the total
-# intensity is consistent with known ordering wavevectors.
+# The correct ground state for FeI₂ is known to be a generalized spiral with one
+# of three propagation wavevectors, ``[0, -1/4, 1/4]`` or ``[1/4, 0, 1/4]`` or
+# ``[-1/4, 1/4, 1/4]``, which are equivalent under 120° rotations. The result of
+# `print_wrapped_intensities` hints at this spiral phase.
 #
-# Let's break the three-fold symmetry by hand. The function
-# [`suggest_magnetic_supercell`](@ref) takes any number of ``𝐤`` modes and
-# suggests a magnetic cell shape that is commensurate with all of them.
+# Let's break the 3-fold symmetry by hand. The function
+# [`suggest_magnetic_supercell`](@ref) takes any number of propagation
+# wavevectors and suggests a commensurate magnetic cell.
 
 suggest_magnetic_supercell([[0, -1/4, 1/4]])
 
-# Using the minimal system returned by [`reshape_supercell`](@ref), it is now
-# easy to find the ground state. Plot the system again, now including "ghost"
-# spins out to 12Å, to verify that the magnetic order is consistent with FeI₂.
+# After calling [`reshape_supercell`](@ref), it becomes easy to find the ground
+# state. Plot the system again, now including "ghost" spins out to 12Å. The
+# correct two-up, two-down magnetic order is visually apparent.
 
-sys_min = reshape_supercell(sys, [1 0 0; 0 2 1; 0 -2 1])
+sys_min = reshape_supercell(sys, [1 0 0; 0 1 -2; 0 1 2])
 randomize_spins!(sys_min)
-minimize_energy!(sys_min);
+minimize_energy!(sys_min)
 plot_spins(sys_min; color=[S[3] for S in sys_min.dipoles], ghost_radius=12)
 
 # ### Spin wave theory
 #
 # Now that the system has been relaxed to an energy minimized ground state, we
-# can calculate the spin wave spectrum. Because we are working with a system of
-# SU(3) coherent states, this calculation will require a multi-flavor boson
-# generalization of the usual spin wave theory.
+# can calculate the spin wave spectrum. Because the system was constructed in
+# `:SUN` mode, the spin wave calculation will automatically employ bosons with
+# ``N = 2s+1 = 3` flavors.
 
 swt = SpinWaveTheory(sys_min; measure=ssf_perp(sys_min))
 
@@ -209,7 +209,7 @@ swt = SpinWaveTheory(sys_min; measure=ssf_perp(sys_min))
 qs = [[0,0,0], [1,0,0], [0,1,0], [1/2,0,0], [0,1,0], [0,0,0]]
 path = q_space_path(cryst, qs, 500)
 res = intensities_bands(swt, path)
-plot_intensities(res; units, title="Single Crystal Bands")
+plot_intensities(res; units, ylims=(0, 10), title="Single Crystal Bands")
 
 # To make direct comparison with inelastic neutron scattering (INS) data, we
 # must account for empirical broadening of the data. Model this using a
@@ -240,7 +240,7 @@ plot_intensities(res; units, colormap=:viridis, title="Domain Averaged Intensiti
 # wave vectors.)
 # 
 # To get this agreement, the theory of SU(3) coherent states is essential. The
-# lower band has large quadrupolar character, and arises from the strong
+# lower band has large quadrupolar character and arises from the strong
 # easy-axis anisotropy of FeI₂.
 #
 # An interesting exercise is to repeat the same study, but using `:dipole` mode

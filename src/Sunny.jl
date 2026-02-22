@@ -7,20 +7,30 @@ import OffsetArrays: OffsetArray
 import ElasticArrays: ElasticArray
 import SpecialFunctions: erf, erfc
 import FFTW
+
+import ChainRulesCore as CRC
 import DynamicPolynomials as DP
+import ElasticArrays: ElasticArray
+import FFTW
+import FiniteDiff
+import HCubature: hcubature
+import Hungarian: hungarian
+import JLD2
+import LineSearches
+import MappedArrays: mappedarray
+import OffsetArrays: OffsetArray
+import Optim
 import Printf: Printf, @printf, @sprintf
 import Random: Random, randn!
-import Optim
-import JLD2
-import HCubature: hcubature
 import TensorOperations: @tensor
 import NLsolve: nlsolve, converged
 
 # Specific to Symmetry/
-import CrystalInfoFramework as CIF
-import Spglib
-import RowEchelon: rref!
 import Brillouin
+import CrystalInfoFramework as CIF
+import MatInt
+import RowEchelon: rref!
+import Spglib
 
 include("MathBasics.jl")
 
@@ -31,11 +41,11 @@ include("Operators/TensorOperators.jl")
 include("Operators/Symbolic.jl")
 export spin_matrices, stevens_matrices, to_product_space, rotate_operator, print_stevens_expansion
 
-include("Symmetry/LatticeUtils.jl")
 include("Symmetry/SymOp.jl")
 include("Symmetry/MSymOp.jl")
 include("Symmetry/SpacegroupData.jl")
 include("Symmetry/WyckoffData.jl")
+include("Symmetry/LatticeUtils.jl")
 include("Symmetry/Crystal.jl")
 include("Symmetry/Bond.jl")
 include("Symmetry/SymmetryAnalysis.jl")
@@ -57,16 +67,19 @@ export FormFactor
 include("System/Moment.jl")
 include("System/Types.jl")
 include("System/System.jl")
+include("System/ModelParams.jl")
 include("System/PairExchange.jl")
 include("System/OnsiteCoupling.jl")
 include("System/Ewald.jl")
 include("System/Interactions.jl")
-export Moment, System, Site, clone_system, eachsite, position_to_site, global_position, magnetic_moment,
-    set_coherent!, set_dipole!, polarize_spins!, randomize_spins!, set_spin_rescaling!, energy, energy_per_site,
-    spin_label, set_onsite_coupling!, set_pair_coupling!, set_exchange!, dmvec, enable_dipole_dipole!,
-    set_field!, to_inhomogeneous, set_field_at!, set_vacancy_at!, set_onsite_coupling_at!,
-    set_exchange_at!, set_pair_coupling_at!, symmetry_equivalent_bonds, remove_periodicity!,
-    modify_exchange_with_truncated_dipole_dipole!
+export Moment, System, Site, clone_system, eachsite, nsites, position_to_site, global_positions,
+    magnetic_moments, set_coherent!, set_dipole!, polarize_spins!, copy_spins!, randomize_spins!,
+    set_spin_rescaling!, set_spin_s_at!, set_spin_rescaling_for_static_sum_rule!,
+    energy, energy_per_site, spin_label, set_onsite_coupling!, set_pair_coupling!,
+    set_exchange!, dmvec, enable_dipole_dipole!, set_field!, to_inhomogeneous, set_field_at!,
+    set_vacancy_at!, set_onsite_coupling_at!, set_exchange_at!, set_pair_coupling_at!,
+    symmetry_equivalent_bonds, remove_periodicity!, modify_exchange_with_truncated_dipole_dipole!,
+    get_param, set_param!, get_params, set_params!, Param
 
 include("MagneticOrdering.jl")
 export print_wrapped_intensities, suggest_magnetic_supercell
@@ -78,7 +91,7 @@ include("Integrators.jl")
 export Langevin, ImplicitMidpoint, step!, suggest_timestep
 
 include("Optimization.jl")
-export minimize_energy! 
+export minimize_energy!
 
 include("MCIF.jl")
 export set_dipoles_from_mcif!
@@ -88,8 +101,8 @@ include("Measurements/QPoints.jl")
 include("Measurements/IntensitiesTypes.jl")
 include("Measurements/Broadening.jl")
 include("Measurements/RotationalAverages.jl")
-export ssf_custom, ssf_custom_bm, ssf_perp, ssf_trace, q_space_path, q_space_grid, lorentzian, gaussian, 
-    powder_average, domain_average
+export ssf_custom, ssf_custom_bm, ssf_perp, ssf_trace, q_space_path, q_space_grid,
+    find_qs_along_path, lorentzian, gaussian, powder_average, domain_average
 
 include("SpinWaveTheory/SpinWaveTheory.jl")
 include("SpinWaveTheory/HamiltonianDipole.jl")
@@ -133,6 +146,10 @@ include("SampledCorrelations/DataRetrieval.jl")
 export SampledCorrelations, SampledCorrelationsStatic, add_sample!, clone_correlations,
     merge_correlations
 
+include("SCGA/NewtonBacktracking.jl")
+include("SCGA/SCGA.jl")
+export SCGA, magnetic_susceptibility_per_site
+
 include("EntangledUnits/TypesAndAliasing.jl")
 include("EntangledUnits/EntangledUnits.jl")
 include("EntangledUnits/EntangledReshaping.jl")
@@ -152,6 +169,10 @@ export propose_uniform, propose_flip, propose_delta, @mix_proposals, LocalSample
 include("Binning/Binning.jl")
 include("Binning/ExperimentData.jl")
 export BinningParameters, load_nxs
+
+include("Fitting.jl")
+export squared_error, squared_error_with_rescaling, squared_error_bands,
+    make_loss_fn, with_hyperparams, uncertainty_matrix
 
 include("deprecated.jl")
 export set_external_field!, set_external_field_at!, dynamic_correlations,
@@ -195,8 +216,7 @@ function __init__()
     end
 end
 
-# Access to PlottingExt module for developer convenience
-PlottingExt() = Base.get_extension(@__MODULE__, :PlottingExt)
+# Access package extensions with, e.g., Base.get_extension(Sunny, :PlottingExt)
 
 
 ### Precompile workloads

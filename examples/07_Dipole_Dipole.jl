@@ -75,12 +75,11 @@ res3 = intensities_bands(swt, path);
 # Create a panel corresponding to Fig. 2 of [Del Maestro and
 # Gingras](https://arxiv.org/abs/cond-mat/0403494). Dashed lines show the effect
 # of truncating dipole-dipole interactions at 5 Å. The Del Maestro and Gingras
-# paper underreported the energy scale by a factor of two, and requires slight
-# corrections to its third dispersion band.
+# paper underreported the energy scale by a factor of two.
 
 fig = Figure(size=(768, 300))
-plot_intensities!(fig[1, 1], res1; units, title="Without long-range dipole")
-ax = plot_intensities!(fig[1, 2], res2; units, title="With long-range dipole")
+plot_intensities!(fig[1, 1], res1; units, ylims=(0, 4), title="Without long-range dipole")
+ax = plot_intensities!(fig[1, 2], res2; units, ylims=(0, 6), title="With long-range dipole")
 for c in eachrow(res3.disp)
     lines!(ax, eachindex(c), c; linestyle=:dash, color=:black)
 end

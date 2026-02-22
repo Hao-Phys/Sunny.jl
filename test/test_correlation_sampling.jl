@@ -1,18 +1,17 @@
 @testitem "Correlation sampling" begin
     using LinearAlgebra
 
+    # FCC with nonstandard, primitive lattice vectors
+    latvecs = [[1, 1, 0] [0, 1, 1] [1, 0, 1]] / 2
+    positions = [[0, 0, 0]]
+    msg = "Cell is 1/4 the standard size for spacegroup 225. Consider `standardize`."
+    cryst = @test_logs (:info, msg) Crystal(latvecs, positions)
+
     function simple_model_fcc(; mode, seed=111)
-        dims = (4, 4, 4)
         J = 1.0
-
-        # FCC with nonstandard, primitive lattice vectors
-        latvecs = [[1, 1, 0] [0, 1, 1] [1, 0, 1]] / 2
-        positions = [[0, 0, 0]]
-        cryst = Crystal(latvecs, positions)
-
         s = mode==:SUN ? 1/2 : 1
         κ = mode==:SUN ? 2 : 1
-        sys = System(cryst, [1 => Moment(; s, g=2)], mode; dims, seed)
+        sys = System(cryst, [1 => Moment(; s, g=2)], mode; dims=(4, 4, 4), seed)
         sys.κs .= κ
         set_exchange!(sys, J, Bond(1, 1, [1, 0, 0]))
         return sys
@@ -80,7 +79,7 @@
     total_intensity_static = sum(res_static.data)
     @test isapprox(total_intensity_static, total_intensity_trace * sc.Δω; atol=1e-9)  # Order of summation can lead to very small discrepancies
 
-    # Test quantum-to-classical increases intensity
+    # Test classical-to-quantum increases intensity
     res_static_c2q = intensities_static(sc, qgrid; kT=0.1)
     total_intensity_static_c2q = sum(res_static_c2q.data)
     @test total_intensity_static_c2q > total_intensity_static
@@ -135,6 +134,23 @@ end
     sc_merged = merge_correlations([sc1, sc2])
     @test sc0.data ≈ sc_merged.data
     @test sc0.M ≈ sc_merged.M
+
+    # Test merging on SampledCorrelationStatic
+    sys = System(Sunny.bcc_crystal(), [1 => Moment(; s=1/2, g=2)], :dipole; dims=(2, 2, 2))
+    sc1 = Sunny.SampledCorrelationsStatic(sys; measure=ssf_perp(sys))
+    sc2 = Sunny.SampledCorrelationsStatic(sys; measure=ssf_perp(sys))
+    sc1.parent.data .= 1.0
+    sc1.parent.nsamples = 1
+    sc2.parent.data .= 1.0
+    sc2.parent.nsamples = 1
+
+    sc_merged = merge_correlations([sc1, sc2])
+    @test all(≈(1.0), sc_merged.parent.data)
+
+    # Test clone_correlations for SampledCorrelationsStatic
+    sc_merged_copy = clone_correlations(sc_merged)
+    @test sc_merged_copy.parent.nsamples ≈ sc_merged.parent.nsamples ≈ 2
+    @test all(≈(1.0), sc_merged_copy.parent.data)
 end
 
 @testitem "Sampled correlations reference" begin

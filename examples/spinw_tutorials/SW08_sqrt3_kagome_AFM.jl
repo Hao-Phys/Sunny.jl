@@ -5,7 +5,7 @@
 # and Sandor Toth. It calculates the linear spin wave theory spectrum for the
 # ``\sqrt{3} \times \sqrt{3}`` order of a kagome antiferromagnet.
 
-# Load Sunny and the GLMakie plotting package
+# Load Sunny and the GLMakie plotting package.
 
 using Sunny, GLMakie
 
@@ -62,9 +62,9 @@ fig
 # empirical `colorrange` that brings the lower-intensity features into focus.
 
 radii = range(0, 2.5, 200)
-energies = range(0, 3, 200)
+energies = range(0, 2.5, 200)
 kernel = gaussian(fwhm=0.05)
 res = powder_average(cryst, radii, 200) do qs
     intensities(swt, qs; energies, kernel)
 end
-plot_intensities(res; units, colorrange=(0,20))
+plot_intensities(res; units, colorrange=(0, 20))

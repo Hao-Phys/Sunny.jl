@@ -1,26 +1,58 @@
-function empty_interactions(mode, na, N)
+function repopulate_couplings_from_params!(sys::System)
+    @assert is_homogeneous(sys)
+    ints = interactions_homog(sys)
+
+    # If `sys` has been reshaped, then also repopulate `sys.origin` (useful for
+    # view_crystal(sys)).
+    if !isnothing(sys.origin)
+        repopulate_couplings_from_params!(sys.origin)
+    end
+
+    # Clear current interactions
+    for i in eachindex(ints)
+        ints[i].onsite = ints[i].onsite * 0.0
+        empty!(ints[i].pair)
+    end
+
+    # Accumulate from params
+    for param in sys.params
+        for (i, oc) in param.onsites
+            ints[i].onsite += oc * param.val
+        end
+
+        for pc in param.pairs
+            b = pc.bond
+            scaled_pc = pc * param.val
+            ints_pairs = ints[b.i].pair
+
+            # Find existing entry for this bond and accumulate
+            idx = findfirst(pc′ -> pc′.bond == b, ints_pairs)
+            if isnothing(idx)
+                push!(ints_pairs, scaled_pc)
+            else
+                ints_pairs[idx] += scaled_pc
+            end
+        end
+    end
+
+    # Non-culled couplings must come first to enable early `break`
+    for (; pair) in ints
+        sort!(pair, by = pc -> pc.isculled)
+    end
+end
+
+function empty_interactions(mode::Symbol, Na::Int, N::Int)
     # Cannot use `fill` because the PairCoupling arrays must be
     # allocated separately for later mutation.
-    return map(1:na) do _
+    return map(1:Na) do _
         Interactions(empty_anisotropy(mode, N), PairCoupling[])
     end
 end
 
-# Warn up to `OverrideWarningMax` times about overriding a coupling
-OverrideWarningCnt::Int = 0
-OverrideWarningMax::Int = 5
-function warn_coupling_override(str)
-    global OverrideWarningCnt, OverrideWarningMax
-    OverrideWarningCnt < OverrideWarningMax && @info str
-    OverrideWarningCnt += 1
-    OverrideWarningCnt == OverrideWarningMax && @info "Suppressing future override notifications."
-end
-
-
 # Creates a copy of the Vector of PairCouplings. This is useful when cloning a
 # system; mutable updates to one clone should not affect the other.
-function clone_interactions(ints::Interactions)
-    (; onsite, pair) = ints
+function clone_interactions(int::Interactions)
+    (; onsite, pair) = int
     return Interactions(onsite, copy(pair))
 end
 
@@ -51,6 +83,13 @@ function to_inhomogeneous(sys::System{N}) where N
     ints = interactions_homog(sys)
 
     ret = clone_system(sys)
+
+    # TODO: Zero out params and interactions of ret.origin?
+
+    # Params unsupported for inhomogeneous system
+    empty!(ret.params)
+
+    # Population interactions_union as 4D array
     na = natoms(ret.crystal)
     ret.interactions_union = Array{Interactions}(undef, ret.dims..., na)
     for site in eachsite(ret)
@@ -62,7 +101,7 @@ end
 
 
 """
-    enable_dipole_dipole!(sys::System, μ0_μB²)
+    enable_dipole_dipole!(sys::System, μ0_μB²; demag=1/3)
 
 Enables long-range interactions between magnetic dipole moments,
 
@@ -71,11 +110,24 @@ Enables long-range interactions between magnetic dipole moments,
 ```
 
 where the sum is over all pairs of sites (singly counted), including periodic
-images, regularized using the Ewald summation convention. Each magnetic moment
-is ``μ = -g μ_B 𝐒``, where ``𝐒`` is the spin angular momentum dipole. The
-parameter `μ0_μB²` specifies the physical constant ``μ_0 μ_B^2``, which has
-dimensions of length³-energy. Obtain this constant for a given system of
-[`Units`](@ref) via its `vacuum_permeability` property.
+images. Each magnetic moment is ``μ_i = -g μ_B 𝐒_i``, where ``𝐒_i`` is the
+spin angular momentum dipole. The parameter `μ0_μB²` specifies the physical
+constant ``μ_0 μ_B^2``, which has dimensions of length³-energy. Obtain this
+constant for a given system of [`Units`](@ref) via its `vacuum_permeability`
+property.
+
+Geometry of the macroscopic sample enters through the demagnetization factor or
+tensor `demag`. Special cases are:
+
+  * `demag = 1/3` for isotropic demagnetization. This is the default and is
+    valid for sphere and cube sample geometries.
+  * `demag = Diagonal([0, 0, 1])` for a sheet-like geometry with surface normal
+    in ``ẑ``.
+  * `demag = Diagonal([1/2, 1/2, 0])` for a needle-like geometry aligned with
+    ``ẑ``.
+
+In a vacuum background, the demagnetization tensor should have trace 1. Set
+`demag = 0` to artificially neglect demagnetization effects.
 
 # Example
 
@@ -84,25 +136,55 @@ units = Units(:meV, :angstrom)
 enable_dipole_dipole!(sys, units.vacuum_permeability)
 ```
 
-!!! tip "Efficiency considerations"  
-    Dipole-dipole interactions are very efficient in the context of spin
-    dynamics simulation, e.g. [`Langevin`](@ref). Sunny applies the fast Fourier
-    transform (FFT) to spins on each Bravais sublattice, such that the
-    computational cost to integrate one time-step scales like ``M^2 N \\ln N``,
-    where ``N`` is the number of cells in the system and ``M`` is the number of
-    Bravais sublattices per cell. Conversely, dipole-dipole interactions are
-    highly _inefficient_ in the context of a [`LocalSampler`](@ref). Each Monte
-    Carlo update of a single spin currently requires scanning over all other
-    spins in the system.
-
 See also [`modify_exchange_with_truncated_dipole_dipole!`](@ref).
+
+!!! tip "Demagnetization details"  
+
+    Formal summation over the infinitely many dipole-dipole pair interactions
+    becomes mathematically ambiguous when the macroscopic sample has a nonzero net
+    magnetic moment, ``𝐌 = ∑_i μ_i``. The traditional Ewald method resolves this
+    ambiguity by neglecting surface effects that would lead to demagnetization. For
+    physical correctness, however, the Ewald energy must be augmented with a surface
+    energy term,
+    ```math
+        E_\\mathrm{surf} = \\frac{μ_0}{2V} 𝐌⋅\\mathcal{N} 𝐌,
+    ```
+    where ``\\mathcal{N}`` is the demagnetization tensor (`demag`). Assuming vacuum
+    background, it can be expressed as an integral over the sample volume ``V``,
+    ```math
+        \\mathcal{N}^{αβ} = - \\frac{1}{4π} ∫_V d𝐱 ∇^α ∇^β |𝐱|^{-1}.
+    ```
+    Note that ``\\mathcal{N}`` has trace 1 because ``∇^2|𝐱|^{-1} = -4πδ(𝐱)``
+    when the integration domain contains the origin.
+
+    This surface correction to the Ewald energy originally appeared in S. de Leeuw,
+    J. Perram, and E. Smith, Proc. R. Soc. London A **373**, 27 (1980); **373**, 57
+    (1980); **388**, 177 (1983). For a pedagogical review, see [V. Ballenegger, J.
+    Chem. Phys. **140**, 161102 (2014)](https://doi.org/10.1063/1.4872019).
+
+    If the sample is embedded in another material, the surface correction
+    ``E_\\mathrm{surf}`` still applies, but ``\\mathcal{N}`` should be calculated
+    differently. For example, a spherical inclusion generally has ``\\mathcal{N} =
+    1/(2μ'+1) ≤ 1/3`` where ``μ' ≥ 1`` denotes the relative permeability of the
+    background medium.
+
+!!! tip "Efficiency considerations"  
+
+    Dipole-dipole interactions are very efficient in the context of spin dynamics
+    simulation, e.g. [`Langevin`](@ref). Sunny applies the fast Fourier transform
+    (FFT) to spins on each Bravais sublattice, such that the computational cost to
+    integrate one time-step scales like ``M^2 N \\ln N``, where ``N`` is the number
+    of cells in the system and ``M`` is the number of Bravais sublattices per cell.
+    Conversely, dipole-dipole interactions are highly _inefficient_ in the context
+    of a [`LocalSampler`](@ref). Each Monte Carlo update of a single spin currently
+    requires scanning over all other spins in the system.
 """
-function enable_dipole_dipole!(sys::System{N}, μ0_μB²=nothing) where N
+function enable_dipole_dipole!(sys::System, μ0_μB²=nothing; demag=1/3)
     if isnothing(μ0_μB²)
         @warn "Deprecated syntax! Consider `enable_dipole_dipole!(sys, units.vacuum_permeability)` where `units = Units(:meV, :angstrom)`."
         μ0_μB² = Units(:meV, :angstrom).vacuum_permeability
     end
-    sys.ewald = Ewald(sys, μ0_μB²)
+    sys.ewald = Ewald(sys, μ0_μB², Mat3(demag * I))
     return
 end
 
@@ -111,12 +193,11 @@ end
 
 Sets the external magnetic field ``𝐁`` scaled by the Bohr magneton ``μ_B``.
 This scaled field has units of energy and couples directly to the dimensionless
-[`magnetic_moment`](@ref). At every site, the Zeeman coupling contributes an
-energy ``+ (𝐁 μ_B) ⋅ (g 𝐒)``, involving the local ``g``-tensor and spin
-angular momentum ``𝐒``. Commonly, ``g ≈ +2`` such that ``𝐒`` is favored to
-anti-align with the applied field ``𝐁``. Note that a given system of
-[`Units`](@ref) will implicitly use the Bohr magneton to convert between field
-and energy dimensions.
+[`magnetic_moments`](@ref). The Zeeman energy at each site is ``+ (𝐁 μ_B) ⋅ (g
+𝐒)``, involving the local ``g``-tensor and spin angular momentum ``𝐒``.
+Commonly, ``g ≈ +2`` such that ``𝐒`` is favored to anti-align with the applied
+field ``𝐁``. Note that a given system of [`Units`](@ref) will implicitly use
+the Bohr magneton to convert between field and energy dimensions.
 
 # Example
 
@@ -137,7 +218,7 @@ end
 
 Sets the external magnetic field ``𝐁`` scaled by the Bohr magneton ``μ_B`` for
 a single [`Site`](@ref). This scaled field has units of energy and couples
-directly to the dimensionless [`magnetic_moment`](@ref). Note that a given
+directly to the dimensionless [`magnetic_moments`](@ref). Note that a given
 system of [`Units`](@ref) will implicitly use the Bohr magneton to convert
 between field and energy dimensions.
 
@@ -150,18 +231,82 @@ end
 """
     set_vacancy_at!(sys::System, site::Site)
 
-Make a single site nonmagnetic. [`Site`](@ref) includes a unit cell and a
-sublattice index.
+Make a single [`Site`](@ref) nonmagnetic. The system must support inhomogeneous
+interactions via [`to_inhomogeneous`](@ref).
 """
 function set_vacancy_at!(sys::System{N}, site) where N
     is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
 
+    # In principle, we should set sys.Ns[site]=1 to get s=0. But :SUN mode
+    # doesn't yet support varying N so a safe marker is κ=0.
     site = to_cartesian(site)
     sys.κs[site] = 0.0
     sys.dipoles[site] = zero(Vec3)
     sys.coherents[site] = zero(CVec{N})
+
+    # Remove onsite coupling
+    ints = interactions_inhomog(sys)
+    ints[site].onsite = empty_anisotropy(sys.mode, N)
+
+    # Remove this vacancy site from neighbors' pair lists
+    for (; bond) in ints[site].pair
+        site′ = bonded_site(site, bond, sys.dims)
+        pair′ = ints[site′].pair
+        deleteat!(pair′, only(findall(pc′ -> pc′.bond == reverse(bond), pair′)))
+    end
+
+    # Remove pair interactions
+    empty!(ints[site].pair)
 end
 
+function is_vacant(sys::System, site)
+    return iszero(sys.κs[to_cartesian(site)])
+end
+
+"""
+    set_spin_s_at!(sys, s, site)
+
+Sets the quantum spin-`s` magnitude at a single [`Site`](@ref). The system must
+support inhomogeneous interactions via [`to_inhomogeneous`](@ref). Mode `:SUN`
+is not yet supported.
+
+!!! warning "Restriction on existing couplings"  
+    General interaction operators cannot be translated between spin
+    representations. The sole exception is 3×3 bilinear exchange. Higher order
+    couplings should be added only after the spin-`s` representation has been
+    fixed. To set these, use [`set_onsite_coupling_at!`](@ref) and
+    [`set_pair_coupling_at!`](@ref).
+"""
+function set_spin_s_at!(sys::System, s::Real, site::Site)
+    is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
+    sys.mode == :SUN && error("Mode :SUN not yet supported.")
+    isinteger(2s) || error("Spin s must be an exact multiple of 1/2.")
+    iszero(s) && error("Use `set_vacancy_at!` to fully remove a magnetic moment.")
+    is_vacant(sys, site) && error("Moment cannot be restored on vacant site.")
+
+    site = to_cartesian(site)
+    s_old = (sys.Ns[site]-1)/2
+    κ_old = sys.κs[site]
+    α = κ_old / s_old
+
+    # Require that any pair couplings are bilinear only
+    ints = interactions_inhomog(sys)
+    for pc in ints[site].pair
+        if !iszero(pc.biquad) || !isempty(pc.general.data)
+            error("Cannot change spin-s in presence of biquadratic coupling.")
+        end
+    end
+
+    # Warn on any onsite coupling, then remove
+    if !iszero(ints[site].onsite)
+        @warn "Removing onsite coupling at site $(site.I)."
+        sys.interactions_union[site].onsite = empty_anisotropy(sys.mode, 0)
+    end
+
+    sys.Ns[site] = Int(2s+1)
+    sys.κs[site] = α * s
+    set_dipole!(sys, sys.dipoles[site], site)
+end
 
 function local_energy_change(sys::System{N}, site, state::SpinState) where N
     (; S, Z) = state
@@ -244,8 +389,8 @@ end
 
 The total system [`energy`](@ref) divided by the number of sites.
 """
-function energy_per_site(sys::System{N}) where N
-    return energy(sys) / nsites(sys)
+function energy_per_site(sys::System{N}; check_normalization=true) where N
+    return energy(sys; check_normalization) / nsites(sys)
 end
 
 """
@@ -253,8 +398,10 @@ end
 
 The total system energy. See also [`energy_per_site`](@ref).
 """
-function energy(sys::System{N}) where N
-    validate_normalization(sys)
+function energy(sys::System{N}; check_normalization=true) where N
+    if check_normalization 
+        validate_normalization(sys)
+    end
     E = 0.0
 
     # Zeeman coupling to external field
@@ -267,7 +414,7 @@ function energy(sys::System{N}) where N
         for i in 1:natoms(sys.crystal)
             # Interactions for sublattice i (same for every cell)
             interactions = sys.interactions_union[i]
-            E += energy_aux(interactions, sys, eachsite(sys, i))
+            E += energy_aux(interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)
@@ -285,25 +432,25 @@ function energy(sys::System{N}) where N
 end
 
 # Total energy associated with the sites of one sublattice
-function energy_aux(ints::Interactions, sys::System{N}, sites) where N
+function energy_aux(int::Interactions, sys::System{N}, sites) where N
     E = 0.0
 
     # Single-ion anisotropy
     if N == 0       # Dipole mode
-        stvexp = ints.onsite :: StevensExpansion
+        stvexp = int.onsite :: StevensExpansion
         for site in sites
             S = sys.dipoles[site]
             E += energy_and_gradient_for_classical_anisotropy(S, stvexp)[1]
         end
     else            # SU(N) mode
-        Λ = ints.onsite :: HermitianC64
+        Λ = int.onsite :: HermitianC64
         for site in sites
             Z = sys.coherents[site]
             E += real(dot(Z, Λ, Z))
         end
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 
@@ -378,7 +525,7 @@ function set_energy_grad_dipoles!(∇E, dipoles::Array{Vec3, 4}, sys::System{N})
     if is_homogeneous(sys)
         for i in 1:natoms(sys.crystal)
             interactions = sys.interactions_union[i]
-            set_energy_grad_dipoles_aux!(∇E, dipoles, interactions, sys, eachsite(sys, i))
+            set_energy_grad_dipoles_aux!(∇E, dipoles, interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)
@@ -393,18 +540,18 @@ function set_energy_grad_dipoles!(∇E, dipoles::Array{Vec3, 4}, sys::System{N})
 end
 
 # Calculate the energy gradient `∇E' for all sites of one sublattice
-function set_energy_grad_dipoles_aux!(∇E, dipoles::Array{Vec3, 4}, ints::Interactions, sys::System{N}, sites) where N
+function set_energy_grad_dipoles_aux!(∇E, dipoles::Array{Vec3, 4}, int::Interactions, sys::System{N}, sites) where N
     # Single-ion anisotropy only contributes in dipole mode. In SU(N) mode, the
     # anisotropy matrix will be incorporated directly into local H matrix.
     if sys.mode in (:dipole, :dipole_uncorrected)
-        stvexp = ints.onsite :: StevensExpansion
+        stvexp = int.onsite :: StevensExpansion
         for site in sites
             S = dipoles[site]
             ∇E[site] += energy_and_gradient_for_classical_anisotropy(S, stvexp)[2]
         end
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 
@@ -463,7 +610,7 @@ function set_energy_grad_coherents!(HZ, Z::Array{CVec{N}, 4}, sys::System{N}) wh
     if is_homogeneous(sys)
         for i in 1:natoms(sys.crystal)
             interactions = sys.interactions_union[i]
-            set_energy_grad_coherents_aux!(HZ, Z, dE_dS, interactions, sys, eachsite(sys, i))
+            set_energy_grad_coherents_aux!(HZ, Z, dE_dS, interactions, sys, eachsite_sublattice(sys, i))
         end
     else
         for site in eachsite(sys)
@@ -476,14 +623,14 @@ function set_energy_grad_coherents!(HZ, Z::Array{CVec{N}, 4}, sys::System{N}) wh
     fill!(dipoles, zero(Vec3))
 end
 
-function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{Vec3, 4}, ints::Interactions, sys::System{N}, sites) where N
+function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{Vec3, 4}, int::Interactions, sys::System{N}, sites) where N
     for site in sites
         # HZ += (Λ + dE/dS S) Z
-        Λ = ints.onsite :: HermitianC64
+        Λ = int.onsite :: HermitianC64
         HZ[site] += mul_spin_matrices(Λ, dE_dS[site], Z[site])
     end
 
-    for pc in ints.pair
+    for pc in int.pair
         (; bond, isculled) = pc
         isculled && break
 
@@ -521,14 +668,27 @@ function set_energy_grad_coherents_aux!(HZ, Z::Array{CVec{N}, 4}, dE_dS::Array{V
     end
 end
 
+# Extract a characteristic energy scale from the magnitude of the energy
+# gradient on a typical site. This works well because ∇E retains a component
+# parallel to the spin (or coherent state).
+function characteristic_energy_scale(sys::System{0})
+    ∇Es, = get_dipole_buffers(sys, 1)
+    set_energy_grad_dipoles!(∇Es, sys.dipoles, sys)
+    return norm(∇E*κ for (∇E, κ) in zip(∇Es, sys.κs)) / sqrt(length(∇Es))
+end
+function characteristic_energy_scale(sys::System{N}) where N
+    ∇Es, = get_coherent_buffers(sys, 1)
+    set_energy_grad_coherents!(∇Es, sys.coherents, sys)
+    return norm(∇E*sqrt(κ) for (∇E, κ) in zip(∇Es, sys.κs)) / sqrt(length(∇Es))
+end
 
 # Internal testing functions
-function energy_grad_dipoles(sys::System{N}) where N
+function energy_grad_dipoles(sys::System)
     ∇E = zero(sys.dipoles)
     set_energy_grad_dipoles!(∇E, sys.dipoles, sys)
     return ∇E
 end
-function energy_grad_coherents(sys::System{N}) where N
+function energy_grad_coherents(sys::System)
     ∇E = zero(sys.coherents)
     set_energy_grad_coherents!(∇E, sys.coherents, sys)
     return ∇E
@@ -537,7 +697,7 @@ end
 
 # Check that the interactions of `sys` are invariant under a rotation about axis
 # by angle θ.
-function check_rotational_symmetry(sys::System{N}; axis, θ) where N
+function check_rotational_symmetry(sys::System; axis, θ)
     # TODO: Employ absolute tolerance `atol` for all `isapprox` checks below.
     # This will better handle comparisons with zero. This will require special
     # implementation for isapprox(::StevensExpansion, ::StevensExpansion).

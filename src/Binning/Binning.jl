@@ -25,7 +25,7 @@ The convention for the binning scheme is that:
   
 A `value` can be binned by computing its bin index:
 
-```jl
+```julia
     coords = covectors * value
     bin_ix = 1 .+ floor.(Int64, (coords .- binstart) ./ binwidth)
 ```
@@ -223,8 +223,8 @@ function unit_resolution_binning_parameters(sc::SampledCorrelations; negative_en
     params
 end
 
-function Sunny.unit_resolution_binning_parameters(isc::SampledCorrelationsStatic; kwargs...)
-    params = Sunny.unit_resolution_binning_parameters(isc.parent; kwargs...)
+function unit_resolution_binning_parameters(isc::SampledCorrelationsStatic; kwargs...)
+    params = unit_resolution_binning_parameters(isc.parent; kwargs...)
     # Integrate over all energies
     params.binstart[4] = -Inf
     params.binwidth[4] = Inf

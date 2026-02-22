@@ -1,4 +1,122 @@
-# Version History
+# Release Notes
+
+## v0.9.0
+(In development)
+
+This release bring significant support for model fitting ([#471](@ref)).
+
+* Functions [`set_exchange!`](@ref), [`set_onsite_coupling!`](@ref), and
+  [`set_pair_coupling!`](@ref) now accept a trailing [`Param`](@ref) pair of the
+  form `label => value`. Labeled parameters can be accessed and modified using
+  the new functions [`get_param`](@ref), [`get_params`](@ref),
+  [`set_param!`](@ref), and [`set_params!`](@ref).
+* A warning will always be emitted when overwriting a coupling. For fitting
+  workflows, use the [`Param`](@ref) interface instead.
+* The constructor [`make_loss_fn`](@ref) assembles a loss function for model
+  fitting. The loss function can be passed to optimization packages like
+  [Optim.jl](https://github.com/JuliaNLSolvers/Optim.jl). Loss hyperparameters
+  can be controlled using [`with_hyperparams`](@ref). Approximate error bars can
+  be calculated from the loss curvature via [`uncertainty_matrix`](@ref).
+* New functions for comparing simulation and experimental data.
+  [`squared_error`](@ref) yields a dimensionless measure, ignoring NaN values.
+  [`squared_error_with_rescaling`](@ref) is similar, but accepts experimental
+  intensities with unknown scale. [`squared_error_bands`](@ref) can be used to
+  compare spin wave bands with experimental intensity peaks.
+* Enhancements to the [`SCGA`](@ref) calculator. External field is now
+  supported. One can calculate the [`magnetic_susceptibility_per_site`](@ref)
+  and the thermally averaged [`magnetic_moments`](@ref).
+* Function [`find_qs_along_path`](@ref) is useful for drawing on top of a
+  [`plot_intensities`](@ref) figure for bands data.
+* [Adapted SpinW Tutorial 35](@ref "SW35 - LuVO₃ fitting") uses spin wave theory
+  to fit inelastic neutron scattering peaks for LuVO₃.
+* [Tutorial 10](@ref "10. Fitting to diffuse scattering data") uses the SCGA
+  calculator to fit MgCr2O4 exchange interactions up to third nearest-neighbor.
+* Fix SCGA convergence in multi-sublattice case ([#468](@ref)).
+* [`magnetic_moments`](@ref) replaces `magnetic_moment(sys, site)`. Similarly,
+  [`global_positions`](@ref) replaces `global_position(sys, site)`. The new
+  functions return mapped arrays ([#474](@ref)).
+* [`nsites`](@ref) counts the number of sites in a system.
+
+## v0.8.1
+(Dec 23, 2025)
+
+* Fix plotting error with [`SCGA`](@ref)-calculated intensities ([#464](@ref)).
+* Add [`copy_spins!`](@ref). Expose `jitter` parameter in
+  [`minimize_energy!`](@ref) ([#465](@ref)).
+
+## v0.8.0
+(Nov 30, 2025)
+
+**Breaking changes** in this release.
+
+* Significant enhancements to crystal construction and symmetry analysis, which
+  may **reorder certain atom and site indices** ([#421](@ref)). Crystal lattice
+  vectors and positions are now idealized according to spacegroup data. In rare
+  cases, this will cause re-indexing of atoms in the crystal. Site indexing
+  conventions for certain reshaped systems may also change; use
+  [`position_to_site`](@ref) for robust indexing of reshaped systems. Loading an
+  mCIF as a chemical cell now employs a standardized Cartesian coordinate
+  system, as would be obtained from [`lattice_vectors`](@ref). Attempting to
+  perform symmetry analysis on a crystal with a larger-than-standard chemical
+  cell will error rather than give a wrong result.
+* When loading a CIF or mCIF, the precision parameter `symprec` becomes optional
+  ([#413](@ref)).
+* Various enhancements to [`minimize_energy!`](@ref). The return value becomes a
+  struct that stores optimization statistics ([#430](@ref)). A small
+  perturbation to the initial spin state breaks accidental symmetries
+  ([#442](@ref)). Convergence to the local minimum becomes faster and more
+  robust ([#453](@ref)).
+* Fixes to [`load_nxs`](@ref) ([#420](@ref)).
+* Add `interpolate` option to [`plot_intensities`](@ref). Selecting
+  `interpolate=true` will significantly reduce file sizes of PDF exports
+  containing 2D heatmap data ([#411](@ref)).
+* [`set_spin_rescaling!`](@ref) now expects a scaling factor for each
+  symmetry-distinct sublattice ([#444](@ref)).
+* Introduce [`set_spin_s_at!`](@ref) to set the local quantum spin-``s``
+  ([#454](@ref)).
+* Add missing 3D support for [`q_space_grid`](@ref) ([#457](@ref)).
+* If user-provided lattice vectors do not match crystallographic conventions,
+  suggest the use of [`standardize`](@ref) ([#461](@ref)).
+* Improve robustness of [`SpinWaveTheoryKPM`](@ref) ([#462](@ref)).
+
+## v0.7.8
+(Jul 1, 2025)
+
+* Compatibility with Makie v0.24 ([#393](@ref)).
+
+## v0.7.7
+(Jun 25, 2025)
+
+* Add [`set_spin_rescaling_for_static_sum_rule!`](@ref) which sets the classical
+  dipole magnitude to ``\sqrt{s (s + 1)}`` for each quantum spin-``s`` moment.
+* Add module [`SCGA`](@ref) for calculating [`intensities_static`](@ref) within
+  the self-consistent Gaussian approximation ([#355](@ref)).
+* Extend [`enable_dipole_dipole!`](@ref) to accept a demagnetization factor or
+  tensor `demag`. The new default is isotropic demagnetization, `demag = 1/3`,
+  appropriate for a spherical sample in vacuum. Set `demag = 0` to disable
+  demagnetization ([#380](@ref)).
+* Fix heatmaps in [`plot_intensities`](@ref) for very large grids
+  ([#379](@ref)).
+* Make energy minimization more reliable ([#397](@ref)).
+
+## v0.7.6
+(May 1, 2025)
+
+* Extend [`powder_average`](@ref) to support static intensities.
+* Vacancies defined by [`set_vacancy_at!`](@ref) are supported in linear spin
+  wave theory. Empty sites are modeled using bosons that do not excite.
+* The default implementation of [`SpinWaveTheoryKPM`](@ref) now uses Lanczos for
+  higher accuracy.
+* Fix correctness of [`suggest_magnetic_supercell`](@ref) when multiple
+  wavevectors are provided.
+* Fix atom indexing when setting interactions for a reshaped system
+  ([#359](@ref)).
+* Normalize `axis` argument to [`SpinWaveTheorySpiral`](@ref) for correctness.
+* Fix thermal prefactor `kT` in spin wave theory ([#370](@ref)).
+* In `:dipole` or `:SUN` mode, functions [`set_onsite_coupling!`](@ref) and
+  [`set_pair_coupling!`](@ref) throw an error when used with quantum spin 1/2.
+  Construct [`System`](@ref) using mode `:dipole_uncorrected` for such models
+  ([#376](@ref)).
 
 ## v0.7.5
 (Jan 20, 2025)
@@ -25,14 +143,14 @@
 * Add function [`view_bz`](@ref) for visualizing reciprocal-space objects in the
   context of the first Brillouin zone.
 * Fix [`load_nxs`](@ref) for compatibility with recent JLD2.
-* Fix Makie precompiles for faster time-to-first-plot in Julia 1.11 ([PR
-  #329](https://github.com/SunnySuite/Sunny.jl/pull/329)).
+* Fix Makie precompiles for faster time-to-first-plot in Julia 1.11
+  ([#329](@ref)).
 
 ## v0.7.3
 (Nov 12, 2024)
 
-* Fix error in `print_symmetry_table` for slightly-distorted crystal cells ([PR
-  #317](https://github.com/SunnySuite/Sunny.jl/pull/317)).
+* Fix error in `print_symmetry_table` for slightly-distorted crystal cells
+  ([#317](@ref)).
 * Stabilize [`SpinWaveTheoryKPM`](@ref). It now automatically selects the
   polynomial order according to an error tolerance.
 * Rename mode `:dipole_large_S` to `:dipole_uncorrected` to emphasize that
@@ -46,10 +164,8 @@
 ## v0.7.2
 (Sep 11, 2024)
 
-* Fix error in `SampledCorrelations` with a coarse ``𝐪``-grid. ([PR
-  #314](https://github.com/SunnySuite/Sunny.jl/pull/314)).
-* Fix colorbar in `plot_intensities!` when all data is uniform ([PR
-  #315](https://github.com/SunnySuite/Sunny.jl/pull/315)).
+* Fix error in `SampledCorrelations` with a coarse ``𝐪``-grid. ([#314](@ref)).
+* Fix colorbar in `plot_intensities!` when all data is uniform ([#315](@ref)).
 * An explicit `colorrange` can be used for plotting `intensities_bands`.
 
 ## v0.7.1
@@ -62,7 +178,7 @@
 ## v0.7.0
 (Aug 30, 2024)
 
-This **major release** introduces breaking interface changes.
+**Breaking changes** in this release.
 
 * The interface for calculating intensities has been revised to unify
   functionality across backends. The functions [`intensities_bands`](@ref),
@@ -97,10 +213,10 @@ This **major release** introduces breaking interface changes.
 ## v0.6.1
 (Aug 2, 2024)
 
-* **Breaking changes**: [`magnetic_moment`](@ref) is now reported in units of
-  the Bohr magneton, ``μ_B``. For model systems where the Zeeman coupling aligns
-  spin dipole with field (e.g., the Ising model convention), create a `SpinInfo`
-  with `g=-1`. ([PR 284](https://github.com/SunnySuite/Sunny.jl/pull/284)).
+* **Breaking changes**: `magnetic_moment` is now reported in units of the Bohr
+  magneton, ``μ_B``. For model systems where the Zeeman coupling aligns spin
+  dipole with field (e.g., the Ising model convention), create a `SpinInfo` with
+  `g=-1` ([#284](@ref)).
 * More flexible [`Units`](@ref) system. `set_external_field!` is deprecated in
   favor of [`set_field!`](@ref), which now expects a field in energy units.
   [`enable_dipole_dipole!`](@ref) now expects a scale parameter ``μ_0 μ_B^2``
@@ -110,17 +226,15 @@ This **major release** introduces breaking interface changes.
 (Jun 18, 2024)
 
 * Various correctness fixes. The magnetic moment is now anti-aligned with the
-  spin dipole ([Issue 190](https://github.com/SunnySuite/Sunny.jl/issues/190)),
-  and the wavevector $𝐪$ in structure factor intensities $\mathcal{S}(𝐪,ω)$
-  now consistently represents momentum transfer _to_ the sample ([Issue
-  270](https://github.com/SunnySuite/Sunny.jl/issues/270)). The new [Example
-  8](@ref "8. Momentum transfer conventions") demonstrates a model system where
-  momentum transfers $±𝐪$ are inequivalent.
+  spin dipole ([#190](@ref)), and the wavevector $𝐪$ in structure factor
+  intensities $\mathcal{S}(𝐪,ω)$ now consistently represents momentum transfer
+  _to_ the sample ([#270](@ref)). The new [Example 8](@ref "8. Momentum transfer
+  conventions") demonstrates a model system where momentum transfers $±𝐪$ are
+  inequivalent.
 * Dynamical structure factor intensities now have a [precisely defined
   scale](@ref "Conventions for the Sunny-calculated structure factor"),
-  independent of the calculator ([Issue
-  264](https://github.com/SunnySuite/Sunny.jl/issues/264)). Consequently, color
-  ranges in plots may need to be rescaled.
+  independent of the calculator ([#264](@ref)). Consequently, color ranges in
+  plots may need to be rescaled.
 * [`Crystal`](@ref) can now infer a chemical unit cell from an mCIF file.
   `System` now supports [`set_dipoles_from_mcif!`](@ref). Through spglib, one
   can now [`standardize`](@ref) any `Crystal`, with an option to idealize site
@@ -141,9 +255,8 @@ This **major release** introduces breaking interface changes.
   experimental function [`modify_exchange_with_truncated_dipole_dipole!`](@ref)
   will accept a real-space cutoff.
 * Intensities calculated with `dynamic_correlations` now avoid "bleeding
-  artifacts" at low-energy (long-timescale) modes. See [PR
-  246](https://github.com/SunnySuite/Sunny.jl/pull/246) for details. This
-  eliminates the need for `process_trajectory=:symmetrize`.
+  artifacts" at low-energy (long-timescale) modes. See [#246](@ref) for details.
+  This eliminates the need for `process_trajectory=:symmetrize`.
 * When passed to `intensity_formula`, the special value `zero(FormFactor)` can
   now be used to disable contributions from a given site. For an example, see
   the ported [SpinW tutorial 19](@ref "SW19 - Different magnetic ions").
@@ -168,19 +281,16 @@ This **major release** introduces breaking interface changes.
   modes and [precisely specified](@ref "Structure Factor Conventions"). The
   g-tensor is applied by default (disable with `apply_g = false`). The intensity
   is additive with increasing number of magnetic ions in the chemical cell,
-  consistent with SpinW. [Issue
-  #235](https://github.com/SunnySuite/Sunny.jl/issues/235).
+  consistent with SpinW ([#235](@ref)).
 * Enhancements to [`view_crystal`](@ref). If a bond allows a DM interaction, its
   orientation will be shown visually. If a [`System`](@ref) argument is
-  supplied, its exchange interactions will be shown..
+  supplied, its exchange interactions will be shown.
 * New function [`suggest_timestep`](@ref) to assist in performing accurate and
-  efficient simulation of classical spin dynamics. [Issue
-  #149](https://github.com/SunnySuite/Sunny.jl/issues/149).
+  efficient simulation of classical spin dynamics ([#149](@ref)).
 * Scalar biquadratic interactions can again be set in `:dipole_large_S` mode via
   the keyword argument `biquad` of [`set_exchange!`](@ref).
 * Significantly speed up `dynamic_correlations` for crystals with many atoms in
-  the unit cell. [Issue
-  #204](https://github.com/SunnySuite/Sunny.jl/issues/204).
+  the unit cell ([#204](@ref)).
 * Renamings: `dt` replaces `Δt` and `damping` replaces `λ`. This affects
   [`Langevin`](@ref), [`ImplicitMidpoint`], and `dynamic_correlations`
   functions.
@@ -189,8 +299,8 @@ This **major release** introduces breaking interface changes.
 (Jan 4, 2024)
 
 * Many bugs in the WGLMakie backend have become apparent, and are being tracked
-  at [Issue #211](https://github.com/SunnySuite/Sunny.jl/issues/211). Emit a
-  warning if WGLMakie is detected, suggesting that GLMakie is preferred.
+  at [#211](@ref). Emit a warning if WGLMakie is detected, suggesting that
+  GLMakie is preferred.
 * Various improvements to [`view_crystal`](@ref). A distance parameter is no
   longer expected. Cartesian axes now appear as "compass" in bottom-left. Custom
   list of reference bonds can be passed. Toggle to view non-magnetic atoms in
@@ -212,11 +322,11 @@ This **major release** introduces breaking interface changes.
 ## v0.5.6
 (Nov 8, 2023)
 
-This release initiates some **major enhancements** to the user interface in support
-of generalized SU(_N_) spin models. See [this documentation
-page](https://sunnysuite.github.io/Sunny.jl/dev/renormalization.html) for an
-illustration of the new features. Most existing Sunny 0.5 models will continue
-to work with deprecation warnings, but these will become hard errors Sunny v0.6.
+This release initiates some **major enhancements** to the user interface in
+support of generalized SU(_N_) spin models. See [this documentation page](@ref
+"Interaction Renormalization") for an illustration of the new features. Most
+existing Sunny 0.5 models will continue to work with deprecation warnings, but
+these will become hard errors Sunny v0.6.
 
 * General pair couplings are now supported in [`set_pair_coupling!`](@ref) and
   [`set_pair_coupling_at!`](@ref). `:SUN` mode supports interactions of any
@@ -235,7 +345,7 @@ to work with deprecation warnings, but these will become hard errors Sunny v0.6.
   [`plot_spins`](@ref) to trigger redrawing of the frame. The argument `colorfn`
   to `plot_spins` supports animation of colors. See [example usage for a
   Heisenberg
-  ferromagnetic.](https://github.com/SunnySuite/Sunny.jl/blob/main/examples/extra/heisenberg_animation.jl)
+  ferromagnet](https://github.com/SunnySuite/Sunny.jl/blob/main/examples/extra/heisenberg_animation.jl).
 * Add [`set_spin_rescaling!`](@ref) feature, which supports improved spectral
   measurements at finite-$T$. This follows the method proposed in [Dahlbom et
   al., [arXiv:2310.19905]](https://arxiv.org/abs/2310.19905).
@@ -273,8 +383,8 @@ to work with deprecation warnings, but these will become hard errors Sunny v0.6.
 ## v0.5.3
 (Sep 8, 2023)
 
-* Add `large_S_spin_operators` and `large_S_stevens_operators`
-  to support single-ion anisotropies in dipole mode without renormalization. Set
+* Add `large_S_spin_operators` and `large_S_stevens_operators` to support
+  single-ion anisotropies in dipole mode without renormalization. Set
   `large_S=true` in [`set_exchange!`](@ref) to avoid renormalization of
   biquadratics.
 * [`view_crystal`](@ref) has been rewritten in Makie.
@@ -300,14 +410,14 @@ to work with deprecation warnings, but these will become hard errors Sunny v0.6.
 
 **New features**.
 
-Support for Linear Spin Wave Theory in `:dipole` and `:SUN` modes. (Thanks Hao
-Zhang!)
+Support for linear spin wave theory (SWT) in `:dipole` and `:SUN` modes. (Thanks
+Hao Zhang!)
 
 New function [`minimize_energy!`](@ref) to efficiently find an optimal
 configuration of spin dipoles or SU(_N_) coherent states.
 
 Major refactors and enhancements to intensity calculations. This new interface
-allows unification between LSWT and classical spin dynamics calculations. This
+allows unification between SWT and classical spin dynamics calculations. This
 interface allows: Custom observables as local quantum operators, better support
 for linebroadening, and automatic binning to facilitate comparison with
 experimental data. See `intensity_formula` for documentation. Use
@@ -337,7 +447,7 @@ sample).
 
 Remove `intensities` function. Instead, use one of `intensities_interpolated` or
 `intensities_binned`. These will require an `intensity_formula`, which defines a
-calculator (e.g., LSWT).
+calculator (e.g., SWT).
 
 Rename `connected_path` to `reciprocal_space_path`, which now returns an
 `xticks` object that can be used in plotting. Replace `spherical_shell` with
@@ -393,11 +503,12 @@ reduce confusion with the physical instantaneous intensities.
 The function `spherical_shell` now takes a radius in physical units of inverse
 Å.
 
-New exported functions [`global_position`](@ref), [`magnetic_moment`](@ref), `all_sites`.
+New exported functions `global_position`, `magnetic_moment`,
+`all_sites`.
 
 Remove all uses of
 [`Base.deepcopy`](https://docs.julialang.org/en/v1/base/base/#Base.deepcopy)
-which [resolves crashes](https://github.com/SunnySuite/Sunny.jl/issues/65).
+which resolves crashes ([#65](@ref)).
 
 ## v0.4.1
 (Feb 13, 2023)
@@ -439,10 +550,10 @@ As a convenience, one can use [`dmvec(D)`](@ref) to convert a DM vector to a
 $3×3$ antisymmetric exchange matrix.
 
 Fully general single-ion anisotropy is now possible. The function
-[`set_onsite_coupling!`](@ref) expects the single ion anisotropy to be expressed as a
-polynomial in symbolic spin operators `𝒮`, or as a linear combination
-of symbolic Stevens operators `𝒪`. For example, an easy axis anisotropy
-in the direction `n` may be written `D*(𝒮⋅n)^2`.
+[`set_onsite_coupling!`](@ref) expects the single ion anisotropy to be expressed
+as a polynomial in symbolic spin operators `𝒮`, or as a linear combination of
+symbolic Stevens operators `𝒪`. For example, an easy axis anisotropy in the
+direction `n` may be written `D*(𝒮⋅n)^2`.
 
 Stevens operators `𝒪[k,q]` admit polynomial expression in spin operators
 `𝒮[α]`. Conversely, a polynomial of spin operators can be expressed as a linear

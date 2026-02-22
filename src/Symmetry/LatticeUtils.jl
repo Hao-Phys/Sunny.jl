@@ -10,10 +10,10 @@ vectors provided as columns of `latvecs`. The inverse mapping is
 function lattice_params(latvecs) :: NTuple{6, Float64}
     v1, v2, v3 = eachcol(Mat3(latvecs))
     a, b, c = norm(v1), norm(v2), norm(v3)
-    acosd_clipped(x) = acosd(min(max(x, -1), 1))
-    α = acosd_clipped((v2 ⋅ v3) / (b * c))
-    β = acosd_clipped((v1 ⋅ v3) / (a * c))
-    γ = acosd_clipped((v1 ⋅ v2) / (a * b))
+    acosd_clamped(x) = acosd(clamp(x, -1, 1))
+    α = acosd_clamped((v2 ⋅ v3) / (b * c))
+    β = acosd_clamped((v1 ⋅ v3) / (a * c))
+    γ = acosd_clamped((v1 ⋅ v2) / (a * b))
     return (a, b, c, α, β, γ)
 end
 
@@ -67,20 +67,22 @@ end
 # spacegroups are characterized by a 3-fold rotational symmetry. All trigonal
 # spacegroups (143-167) admit a hexagonal setting. Some of these (146, 148, 155,
 # 160, 161, 166, 167) additionally admit a rhombohedral setting.
+#
+# The "alt" suffix indicates deviation from the ITA lattice vector conventions.
 @enum CellType begin
     triclinic
     monoclinic
     orthorhombic
     tetragonal
+    tetragonal_alt
     rhombohedral
     hexagonal
+    hexagonal_alt
     cubic
 end
 
-# Infer the CellType (lattice system) from lattice vectors. Report an error if
-# the unit cell is not in conventional form, which would invalidate the table of
-# symops for a given Hall number.
-function cell_type(latvecs::Mat3)
+# Infer the CellType (lattice system) from lattice vectors.
+function cell_type(latvecs)
     a, b, c, α, β, γ = lattice_params(latvecs)
 
     if a ≈ b ≈ c
@@ -95,7 +97,7 @@ function cell_type(latvecs::Mat3)
         if a ≈ b
             return tetragonal
         elseif b ≈ c || c ≈ a
-            error("Found a nonconventional tetragonal unit cell. Consider using `lattice_vectors(a, a, c, 90, 90, 90)`.")
+            return tetragonal_alt # nonconventional
         else
             return orthorhombic
         end
@@ -107,7 +109,7 @@ function cell_type(latvecs::Mat3)
         if γ ≈ 120
             return hexagonal
         else
-            error("Found a nonconventional hexagonal unit cell. Consider using `lattice_vectors(a, a, c, 90, 90, 120)`.")
+            return hexagonal_alt # nonconventional
         end
     end
 
@@ -115,17 +117,62 @@ function cell_type(latvecs::Mat3)
     if α ≈ β ≈ 90 || β ≈ γ ≈ 90 || α ≈ γ ≈ 90
         return monoclinic
     end
-    
+
     return triclinic
+end
+
+function idealize_latvecs(sg::Spacegroup, latvecs; tol)
+    # Cell type for standard setting
+    cell = cell_type(standard_setting[sg.number])
+
+    # Lattice vectors in standard setting
+    latvecs_std = latvecs / sg.setting.R
+    params = lattice_params(latvecs_std)
+    (a, b, c, α, β, γ) = params
+
+    if cell == cubic
+        a = b = c = Statistics.mean((a, b, c))
+        α = β = γ = 90
+    elseif cell == tetragonal
+        a = b = Statistics.mean((a, b))
+        α = β = γ = 90
+    elseif cell == orthorhombic
+        α = β = γ = 90
+    elseif cell == hexagonal
+        a = b = Statistics.mean((a, b))
+        α = β = 90
+        γ = 120
+    elseif cell == monoclinic
+        α = γ = 90
+    else
+        @assert cell == triclinic
+    end
+
+    # Idealized lattice vectors in standard setting
+    latvecs_std′ = lattice_vectors(a, b, c, α, β, γ)
+
+    # Convert back to custom setting
+    latvecs′ = latvecs_std′ * sg.setting.R
+
+    # Globally rotate the Cartesian frame to get the best match with the
+    # original latvecs. A reflection det(R) = ±1 may also be applied here, as it
+    # leaves the lattice parameters (lengths and angles) invariant.
+    R = closest_unitary(latvecs / latvecs′)
+    latvecs′ = R * latvecs′
+    if !isapprox(latvecs, latvecs′; rtol=tol)
+        error("Lattice parameters $params appear incompatible with spacegroup $(sg.label) in standard setting")
+    end
+
+    return latvecs′
 end
 
 function all_compatible_cells(cell::CellType)
     if cell == triclinic
-        [triclinic, monoclinic, orthorhombic, tetragonal, rhombohedral, hexagonal, cubic]
+        [triclinic, monoclinic, orthorhombic, tetragonal, tetragonal_alt, rhombohedral, hexagonal, hexagonal_alt, cubic]
     elseif cell == monoclinic
-        [monoclinic, orthorhombic, tetragonal, hexagonal, cubic]
+        [monoclinic, orthorhombic, tetragonal, tetragonal_alt, hexagonal, hexagonal_alt, cubic]
     elseif cell == orthorhombic
-        [orthorhombic, tetragonal, cubic]
+        [orthorhombic, tetragonal, tetragonal_alt, cubic]
     elseif cell == tetragonal
         [tetragonal, cubic]
     elseif cell == rhombohedral
@@ -138,4 +185,3 @@ function all_compatible_cells(cell::CellType)
         error()
     end
 end
-

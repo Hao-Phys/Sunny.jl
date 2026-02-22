@@ -3,26 +3,34 @@ function onsite_coupling(sys, site, matrep::AbstractMatrix)
     size(matrep) == (N, N) || error("Invalid matrix size.")
     matrep ≈ matrep' || error("Operator is not Hermitian")
 
-    if N == 2 && isapprox(matrep, matrep[1, 1] * I; atol=1e-8)
-        suggest = sys.mode == :dipole ? " (use :dipole_uncorrected for legacy calculations)" : ""
-        @warn "Onsite coupling is always trivial for quantum spin s=1/2" * suggest
+    if N == 2
+        if sys.mode == :dipole
+            error("Consider mode :dipole_uncorrected. Onsite coupling is trivial for quantum spin 1/2.")
+        elseif sys.mode == :SUN
+            error("Onsite coupling is trivial for quantum spin 1/2.")
+        end
     end
 
     if sys.mode == :SUN
         return Hermitian(matrep)
     elseif sys.mode == :dipole
-        s = spin_label(sys, to_atom(site))
+        s = spin_label_site(sys, site)
         c = matrix_to_stevens_coefficients(hermitianpart(matrep))
         return StevensExpansion(rcs_factors(s) .* c)
     elseif sys.mode == :dipole_uncorrected
-        error("System with mode `:dipole_uncorrected` requires a symbolic operator.")
+        error("System with mode :dipole_uncorrected requires a symbolic operator.")
     end
 end
 
 function onsite_coupling(sys, site, p::DP.AbstractPolynomialLike)
     if sys.mode != :dipole_uncorrected
-        error("Symbolic operator only valid for system with mode `:dipole_uncorrected`.")
+        error("Symbolic operator only valid for system with mode :dipole_uncorrected.")
     end
+
+    if !iszero(imag(p))
+        error("Operator is not Hermitian. Consider real(…) to transform spin polynomial coefficients.")
+    end
+    p = real(p)
 
     S² = sys.κs[site]^2
     c = operator_to_stevens_coefficients(p, S²)
@@ -56,7 +64,8 @@ function empty_anisotropy(mode, N)
 end
 
 function Base.iszero(stvexp::StevensExpansion)
-    return iszero(stvexp.kmax)
+    (; c0, kmax) = stvexp
+    return iszero(c0) && iszero(kmax)
 end
 
 function Base.isapprox(stvexp::StevensExpansion, stvexp′::StevensExpansion)
@@ -64,16 +73,28 @@ function Base.isapprox(stvexp::StevensExpansion, stvexp′::StevensExpansion)
            (stvexp.c4 ≈ stvexp′.c4) && (stvexp.c6 ≈ stvexp′.c6)
 end
 
+function Base.:+(stvexp::StevensExpansion, stvexp′::StevensExpansion)
+    return StevensExpansion(stvexp.c0 + stvexp′.c0,
+                            stvexp.c2 + stvexp′.c2,
+                            stvexp.c4 + stvexp′.c4,
+                            stvexp.c6 + stvexp′.c6)
+end
+
+function Base.:*(stvexp::StevensExpansion, x::Real)
+    (; c0, c2, c4, c6) = stvexp
+    return StevensExpansion(c0*x, c2*x, c4*x, c6*x)
+end
+
 function rotate_operator(stvexp::StevensExpansion, R)
     c2′ = rotate_stevens_coefficients(stvexp.c2, R)
     c4′ = rotate_stevens_coefficients(stvexp.c4, R)
     c6′ = rotate_stevens_coefficients(stvexp.c6, R)
-    return StevensExpansion(stvexp.kmax, stvexp.c0, c2′, c4′, c6′)
+    return StevensExpansion(stvexp.c0, c2′, c4′, c6′, stvexp.kmax)
 end
 
-function operator_to_matrix(stvexp::StevensExpansion; N) 
+function operator_to_matrix(stvexp::StevensExpansion; N)
     acc = zeros(ComplexF64, N, N)
-    for (k, c) in zip((0,2,4,6), (stvexp.c0, stvexp.c2, stvexp.c4, stvexp.c6))
+    for (k, c) in zip((0, 2, 4, 6), (stvexp.c0, stvexp.c2, stvexp.c4, stvexp.c6))
         acc += c' * stevens_matrices_of_dim(k; N)
     end
     return acc
@@ -93,13 +114,19 @@ end
 
 
 """
-    set_onsite_coupling!(sys::System, op, i::Int)
+    set_onsite_coupling!(sys::System, op, i, param=nothing)
 
 Set the single-ion anisotropy for the `i`th atom of every unit cell, as well as
 all symmetry-equivalent atoms. The operator `op` may be provided as an abstract
 function of the local spin operators, as a polynomial of
 [`spin_matrices`](@ref), or as a linear combination of
 [`stevens_matrices`](@ref).
+
+In `:dipole` mode, the onsite couplings are subject to a classical-to-quantum
+renormalization. This procedure is designed such that `:dipole` and `:SUN` modes
+agree in the onsite coupling energy for a purely dipolar state. Use
+`:dipole_uncorrected` mode to disable this renormalization. See the
+documentation page [Interaction Renormalization](@ref) for more information.
 
 # Examples
 ```julia
@@ -115,47 +142,46 @@ O = stevens_matrices(spin_label(sys, i))
 set_onsite_coupling!(sys, O[4,0] + 5*O[4,4], i)
 ```
 
+The optional trailing [`Param`](@ref) argument labels the coupling and allows to
+mutably update the coupling strength.
+
 !!! warning "Limitations arising from quantum spin operators"  
-    Single-ion anisotropy is physically impossible for local moments with
+    Single-ion anisotropy is physically impossible in a bare Hamiltonian with
     quantum spin ``s = 1/2``. Consider, for example, that any Pauli matrix
     squared gives the identity. More generally, one can verify that the ``k``th
     order Stevens operators `O[k, q]` are zero whenever ``s < k/2``.
     Consequently, an anisotropy quartic in the spin operators requires ``s ≥ 2``
-    and an anisotropy of sixth order requires ``s ≥ 3``. To circumvent this
-    physical limitation, Sunny provides a mode `:dipole_uncorrected` that
-    naïvely replaces quantum spin operators with classical moments. See the
-    documentation page [Interaction Renormalization](@ref) for more information.
+    and an anisotropy of sixth order requires ``s ≥ 3``. To build an effective
+    spin Hamiltonian that is not subject to these limitations, consider mode
+    `:dipole_uncorrected`, which formally works in the ``s → ∞`` limit.
 """
-function set_onsite_coupling!(sys::System, op, i::Int)
+function set_onsite_coupling!(sys::System, op, i::Int, paramspec=nothing)
     is_homogeneous(sys) || error("Use `set_onsite_coupling_at!` for an inhomogeneous system.")
-    ints = interactions_homog(sys)
 
-    # If `sys` has been reshaped, then operate first on `sys.origin`, which
-    # contains full symmetry information.
+    # If reshaped, write to origin and transfer params back
     if !isnothing(sys.origin)
-        set_onsite_coupling!(sys.origin, op, i)
-        transfer_interactions!(sys, sys.origin)
+        set_onsite_coupling!(sys.origin, op, i, paramspec)
+        transfer_params_from_origin!(sys)
         return
     end
 
+    @assert isnothing(sys.origin)
     (1 <= i <= natoms(sys.crystal)) || error("Atom index $i is out of range.")
 
-    if !iszero(ints[i].onsite)
-        warn_coupling_override("Overriding anisotropy for atom $i.")
-    end
-
-    onsite = onsite_coupling(sys, CartesianIndex(1,1,1,i), op)
+    onsite = onsite_coupling(sys, CartesianIndex(1, 1, 1, i), op)
 
     if !is_anisotropy_valid(sys.crystal, i, onsite)
         error("""Symmetry-violating anisotropy: $op.
                  Use `print_site(cryst, $i)` for more information.""")
     end
 
+    # Propagate onsites by symmetry
+    onsites = Tuple{Int, OnsiteCoupling}[]
     cryst = sys.crystal
     for j in all_symmetry_related_atoms(cryst, i)
         # Find some symop s that transforms i into j
         s = first(symmetries_between_atoms(cryst, j, i))
-        
+
         # R is orthogonal, and may include rotation and reflection
         R = cryst.latvecs * s.R * inv(cryst.latvecs)
 
@@ -166,13 +192,20 @@ function set_onsite_coupling!(sys::System, op, i::Int)
         # In moving from site i to j, a spin S rotates to Q S. Transform the
         # anisotropy operator using the inverse rotation Q' so that the energy
         # remains invariant when applied to the transformed spins.
-        ints[j].onsite = rotate_operator(onsite, Q')
+        onsite′ = rotate_operator(onsite, Q')
+        push!(onsites, (j, onsite′))
     end
+
+    # Add to model params and repopulate couplings
+    atom_matches(param) = any(j == i for (j, _) in param.onsites)
+    paramspec = @something paramspec (get_unnamed_label(sys, atom_matches) => 1.0)
+    replace_model_param!(sys, paramspec; onsites, reference="for atom $i")
+    repopulate_couplings_from_params!(sys)
 end
 
-function set_onsite_coupling!(sys::System, fn::Function, i::Int)
+function set_onsite_coupling!(sys::System, fn::Function, i::Int, paramspec=nothing)
     S = spin_matrices(spin_label(sys, i))
-    set_onsite_coupling!(sys, fn(S), i)
+    set_onsite_coupling!(sys, fn(S), i, paramspec)
 end
 
 
@@ -187,14 +220,89 @@ See also [`set_onsite_coupling!`](@ref).
 """
 function set_onsite_coupling_at!(sys::System, op, site::Site)
     is_homogeneous(sys) && error("Use `to_inhomogeneous` first.")
+    is_vacant(sys, site) && error("Cannot couple vacant site")
+
     ints = interactions_inhomog(sys)
     site = to_cartesian(site)
     ints[site].onsite = onsite_coupling(sys, site, op)
 end
 
 function set_onsite_coupling_at!(sys::System, fn::Function, site::Site)
-    S = spin_matrices(spin_label(sys, to_atom(site)))
+    S = spin_matrices(spin_label_site(sys, site))
     set_onsite_coupling_at!(sys, fn(S), site)
+end
+
+
+function get_stevens_expansion_at(sys::System, site::Site)
+    site = to_cartesian(site)
+    inter = if is_homogeneous(sys)
+        interactions_homog(sys)[to_atom(site)]
+    else
+        interactions_inhomog(sys)[site]
+    end
+
+    (; onsite) = inter
+    if onsite isa HermitianC64
+        return StevensExpansion(matrix_to_stevens_coefficients(inter.onsite))
+    else
+        @assert onsite isa StevensExpansion
+        return onsite
+    end
+end
+
+function get_stevens_expansion(sys::System, i::Int)
+    @assert is_homogeneous(sys)
+    sys = @something sys.origin sys
+    return get_stevens_expansion_at(sys, (1, 1, 1, i))
+end
+
+function unrenormalize_quadratic_anisotropy(stvexp::StevensExpansion, sys::System, site::Site)
+    site = to_cartesian(site)
+    (; c0, c2) = stvexp
+
+    # Undo RCS renormalization for quadrupolar anisotropy for spin-s
+    if sys.mode == :dipole
+        s = (sys.Ns[site] - 1) / 2
+        c2 = c2 / rcs_factors(s)[2] # Don't mutate c2 in-place!
+    end
+
+    # Stevens quadrupole operators expressed as 3×3 spin bilinears
+    quadrupole_basis = [
+        [1 0 0; 0 -1 0; 0 0 0],    # 𝒪₂₂  = SˣSˣ - SʸSʸ
+        [0 0 1; 0 0 0; 1 0 0] / 2, # 𝒪₂₁  = (SˣSᶻ + SᶻSˣ)/2
+        [-1 0 0; 0 -1 0; 0 0 2],   # 𝒪₂₀  = 2SᶻSᶻ - SˣSˣ - SʸSʸ
+        [0 0 0; 0 0 1; 0 1 0] / 2, # 𝒪₂₋₁ = (SʸSᶻ + SᶻSʸ)/2
+        [0 1 0; 1 0 0; 0 0 0],     # 𝒪₂₋₂ = SˣSʸ + SʸSˣ
+    ]
+
+    # The c0 coefficient incorporates a factor of S². For quantum spin
+    # operators, S² = s(s+1) I. For the large-s classical limit, S² = s² is a
+    # scalar.
+    S² = if sys.mode == :dipole_uncorrected
+        # Undoes extraction in `operator_to_stevens_coefficients`. Note that
+        # spin magnitude s² is set to κ², as originates from `onsite_coupling`
+        # for p::AbstractPolynomialLike.
+        sys.κs[site]^2
+    else
+        # Undoes extraction in `matrix_to_stevens_coefficients` where 𝒪₀₀ = I.
+        s = (sys.Ns[site]-1) / 2
+        s * (s+1)
+    end
+
+    return c2' * quadrupole_basis + only(c0) * I / S²
+end
+
+function get_quadratic_anisotropy(sys::System, i::Int)
+    is_homogeneous(sys) || error("Use `get_quadratic_anisotropy_at` for inhomogeneous system.")
+    sys = @something sys.origin sys
+    onsite = get_stevens_expansion(sys, i)
+    return unrenormalize_quadratic_anisotropy(onsite, sys, (1, 1, 1, i))
+end
+
+function get_quadratic_anisotropy_at(sys::System, site::Site)
+    is_homogeneous(sys) && error("Use `get_quadratic_anisotropy` for homogeneous system.")
+    onsite = get_stevens_expansion_at(sys, site)
+    return unrenormalize_quadratic_anisotropy(onsite, sys, site)
 end
 
 
@@ -205,7 +313,7 @@ end
 # overall (l- and m-dependent) scaling factor. Also return the gradient of the
 # scalar output.
 function energy_and_gradient_for_classical_anisotropy(S::Vec3, stvexp::StevensExpansion)
-    (; kmax, c0, c2, c4, c6) = stvexp
+    (; c0, c2, c4, c6, kmax) = stvexp
 
     E      = only(c0)
     dE_dz  = 0.0

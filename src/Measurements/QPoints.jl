@@ -10,15 +10,15 @@ struct QPath <: AbstractQPoints
     xticks :: Tuple{Vector{Int64}, Vector{String}}
 end
 
-struct QGrid{N} <: AbstractQPoints
-    qs :: Array{Vec3, N}
+struct QGrid{D} <: AbstractQPoints
+    qs :: Array{Vec3, D}
 
     ### Next three fields contain equivalent information:
     # Directions in RLU aligned with parallelpiped
-    axes :: NTuple{N, Vec3}
+    axes :: NTuple{D, Vec3}
     # Low and high coefficient values that scale axes
-    coefs_lo :: Vector{Float64}
-    coefs_hi :: Vector{Float64}
+    coefs_lo :: NTuple{D, Float64}
+    coefs_hi :: NTuple{D, Float64}
     # Overall parallelpiped offset in RLU
     offset :: Vec3
 end
@@ -96,7 +96,7 @@ function q_space_path(cryst::Crystal, qs, n; labels=nothing)
     push!(markers, 1+length(path))
     push!(path, qs[end])
 
-    labels = @something labels fractional_vec3_to_string.(qs)
+    labels = @something labels vec3_to_string.(qs)
     xticks = (markers, labels)
     return QPath(path, xticks)
 end
@@ -123,12 +123,14 @@ selecting `range2 = (lo2, hi2)`, an appropriate step-size will be inferred to
 provide an approximately uniform sampling density in global Cartesian
 coordinates.
 
-The axes may be non-orthogonal. To extend to an orthohombic volume in global
-Cartesian coordinates, set `orthogonalize=true`.
+Setting `orthogonalize=true` will project `axis2` and `axis3` such that all axes
+become orthogonal in global Cartesian ``𝐪`` coordinates.
 
-For a 1D grid, use [`q_space_path`](@ref) instead.
+To specify a 1D grid, use [`q_space_path`](@ref) instead.
 """
 function q_space_grid(cryst::Crystal, axis1, range1, axis2, range2; offset=zero(Vec3), orthogonalize=false)
+    rank(hcat(axis1, axis2); rtol=1e-12) == 2 || error("Axes are linearly dependent")
+
     # Axes in global coordinates
     A1 = cryst.recipvecs * axis1
     A2 = cryst.recipvecs * axis2
@@ -136,7 +138,7 @@ function q_space_grid(cryst::Crystal, axis1, range1, axis2, range2; offset=zero(
     # Orthogonalize axes in global coordinates, if requested
     if orthogonalize
         # Project A2 onto space perpendicular to A1
-        A2 = proj(A2, normalize(A1))
+        A2 = proj(A2, A1)
         # Update RLU representation
         axis2 = cryst.recipvecs \ A2
     end
@@ -155,8 +157,8 @@ function q_space_grid(cryst::Crystal, axis1, range1, axis2, range2; offset=zero(
     end
 
     axes = hcat(axis1, axis2)
-    coefs_lo = axes \ (q_lo - offset)
-    coefs_hi = axes \ (q_hi - offset)
+    coefs_lo = NTuple{2}(axes \ (q_lo - offset))
+    coefs_hi = NTuple{2}(axes \ (q_hi - offset))
     coefs_sz = (length1, length2)
     range1, range2 = map(range, coefs_lo, coefs_hi, coefs_sz)
     qs = [axes * [c1, c2] + offset for c1 in range1, c2 in range2]
@@ -164,8 +166,118 @@ function q_space_grid(cryst::Crystal, axis1, range1, axis2, range2; offset=zero(
     @assert isapprox(qs[begin], q_lo; atol=1e-12)
     @assert isapprox(qs[end], q_hi; atol=1e-12)
 
-    # Adjustment of axis2 does not affect axis1 range
+    # Specified axis1 range is respected
     @assert range(coefs_lo[1], coefs_hi[1], coefs_sz[1]) ≈ range1
 
     return QGrid{2}(qs, (axis1, axis2), coefs_lo, coefs_hi, offset)
+end
+
+function q_space_grid(cryst::Crystal, axis1, range1, axis2, range2, axis3, range3; orthogonalize=false)
+    rank(hcat(axis1, axis2, axis3); rtol=1e-12) == 3 || error("Axes are linearly dependent")
+
+    # Axes in global coordinates
+    A1 = cryst.recipvecs * axis1
+    A2 = cryst.recipvecs * axis2
+    A3 = cryst.recipvecs * axis3
+
+    # Orthogonalize axes in global coordinates, if requested
+    if orthogonalize
+        # Project A2 onto space perpendicular to A1
+        A2 = proj(A2, A1)
+        # Project A3 onto space perpendicular to A1 and A2
+        A3 = proj(proj(A3, A1), A2)
+        # Update RLU representation
+        axis2 = cryst.recipvecs \ A2
+        axis3 = cryst.recipvecs \ A3
+    end
+
+    # Corner-to-corner displacement vector
+    q_lo = first(range1) * axis1 + first(range2) * axis2 + first(range3) * axis3
+    q_hi = last(range1) * axis1 + last(range2) * axis2 + last(range3) * axis3
+    Δq_global = cryst.recipvecs * (q_hi - q_lo)
+
+    # Determine lengths yielding a uniform spacing along each axis
+    length1 = length(range1)
+    length2 = if range2 isa Tuple{Number, Number}
+        round(Int, length1 * abs(Δq_global⋅normalize(A2) / (Δq_global⋅normalize(A1))))
+    else
+        length(range2)
+    end
+    length3 = if range3 isa Tuple{Number, Number}
+        round(Int, length1 * abs(Δq_global⋅normalize(A3) / (Δq_global⋅normalize(A1))))
+    else
+        length(range3)
+    end
+
+    axes = hcat(axis1, axis2, axis3)
+    coefs_lo = NTuple{3}(axes \ q_lo)
+    coefs_hi = NTuple{3}(axes \ q_hi)
+    coefs_sz = (length1, length2, length3)
+    range1, range2, range3 = map(range, coefs_lo, coefs_hi, coefs_sz)
+    qs = [axes * [c1, c2, c3] for c1 in range1, c2 in range2, c3 in range3]
+
+    @assert isapprox(qs[begin], q_lo; atol=1e-12)
+    @assert isapprox(qs[end], q_hi; atol=1e-12)
+
+    # Specified axis1 range is respected
+    @assert range(coefs_lo[1], coefs_hi[1], coefs_sz[1]) ≈ range1
+
+    return QGrid{3}(qs, (axis1, axis2, axis3), coefs_lo, coefs_hi, zero(Vec3))
+end
+
+
+function fractional_position_along_segment(x, v1, v2; tol)
+    d = v2 - v1
+    dd = dot(d, d)
+
+    # Check for degeneracy (segment becomes a point)
+    if dd ≤ tol^2
+        return norm(x - v1) ≤ tol ? 0.0 : NaN
+    end
+
+    # Position along the line/segment
+    t = dot(x - v1, d) / dd
+
+    # Collinearity check: distance from x to the line through v1 → v2
+    r = (x - v1) - t * d
+    return norm(r) ≤ tol ? t : NaN
+end
+
+"""
+    find_qs_along_path(qs, path; tol=1e-12)
+
+Return fractional indices of wavevectors `qs` within a [`q_space_path`](@ref).
+The `qs` must be in sorted order along the direction of the `path`.
+Consequently, the returned indices are non-decreasing.
+"""
+function find_qs_along_path(qs, path; tol=1e-12)
+    indices = Float64[]
+    npts = length(qs)
+    nsegments = length(path.qs) - 1
+
+    i = j = 1
+    while i <= npts && j <= nsegments
+        q  = qs[i]
+        v1 = path.qs[j]
+        v2 = path.qs[j+1]
+
+        t = fractional_position_along_segment(q, v1, v2; tol)
+
+        # t ∈ [0, 1] implies q is within segment [v1, v2]. Allow for some
+        # tolerance.
+        if !isnan(t) && 0-tol ≤ t ≤ 1+tol
+            push!(indices, j + clamp(t, 0, 1))
+            i += 1 # Accept and move to next q
+        else
+            j += 1 # Move to next segment
+        end
+    end
+
+    n = length(indices)
+    if n < npts
+        q_str = vec3_to_string(qs[n+1])
+        error("Failed to find q=$q_str in path at tol=$tol")
+    end
+
+    return indices
 end

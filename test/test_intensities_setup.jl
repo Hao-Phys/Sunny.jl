@@ -1,3 +1,36 @@
+@testitem "Q path and grid" begin
+    using Test
+    latvecs = lattice_vectors(1, 1.5, 2, 50, 70, 100)
+    positions = [[0,0,0]]
+    cryst = Crystal(latvecs, positions)
+
+    path = q_space_path(cryst, [[0, 0, 0], [1, 0, 0], [1, 1, 1]], 50; labels=["A", "B", "C"])
+    @test path.xticks == ([1, 33, 50], ["A", "B", "C"])
+
+    grid = q_space_grid(cryst, [1, 0, 0], range(0, 1, 10), [0, 1, 0], range(0, 1, 3))
+    @test collect(grid.axes) ≈ [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    @test size(grid.qs) == (10, 3)
+
+    grid = q_space_grid(cryst, [1, 0, 0], range(0, 1, 10), [0, 1, 0], (0, 1); orthogonalize=true)
+    @test collect(grid.axes) ≈ [[1.0, 0.0, 0.0], [-0.44703287356193794, 1.0, 0.0]]
+    @test size(grid.qs) == (10, 7)
+    c1s, c2s = range.(grid.coefs_lo, grid.coefs_hi, size(grid.qs))
+    qs_reconstructed = [c1 * grid.axes[1] + c2 * grid.axes[2] + grid.offset for c1 in c1s, c2 in c2s]
+    @test grid.qs ≈ qs_reconstructed
+
+    grid = q_space_grid(cryst, [1, 0, 0], range(0, 1, 10), [0, 1, 0], (0, 1), [0, 0, 1], (0, 1))
+    @test collect(grid.axes) ≈ [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    @test size(grid.qs) == (10, 8, 5)
+
+    grid = q_space_grid(cryst, [1, 0, 0], range(0, 1, 10), [0, 1, 0], (0, 1), [0, 0, 1], (0, 1); orthogonalize=true)
+    @test collect(grid.axes) ≈ [[1.0, 0.0, 0.0], [-0.44703287356193794, 1.0, 0.0], [0.17101007166283427, 0.48209070726490455, 1.0]]
+    @test size(grid.qs) == (10, 7, 4)
+    c1s, c2s, c3s = range.(grid.coefs_lo, grid.coefs_hi, size(grid.qs))
+    qs_reconstructed = [c1 * grid.axes[1] + c2 * grid.axes[2] + c3 * grid.axes[3] for c1 in c1s, c2 in c2s, c3 in c3s]
+    @test grid.qs ≈ qs_reconstructed
+end
+
+
 # TODO: Investigate TestItemRunner slowdown. Runtime is 1.1s on Sunny 0.7,
 # mainly due to type inference. But the same code, compiled in a function from
 # the terminal, is a small fraction of a second.
@@ -55,7 +88,7 @@ end
     sc = SampledCorrelations(sys; dt, energies=range(0.0, 10.0, 100), measure=ssf_perp(sys))
 
     ωs = Sunny.available_energies(sc; negative_energies=true)
-    dts = 0:(sc.dt * sc.measperiod):3
+    dts = 0:(sc.integrator.dt * sc.measperiod):3
     vals = sum(exp.(im .* ωs .* dts'), dims=1)[:]
 
     # Verify it made a delta function
@@ -139,4 +172,37 @@ end
     # Integrate over energies to get static intensity, then average over sampled
     # q values to get sum rule.
     @test sum(res.data) * sc.Δω / length(qs) ≈ (s*g)^2
+end
+
+@testitem "Powder broadening" begin
+    # Create dummy PowderIntensites with uniform intensities in |q|
+    latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
+    cryst = Crystal(latvecs, [[0, 0, 0]])
+    radii = collect(range(0, 10; length=100))
+    energies = [0, 0.5, 1.0]
+    data = repeat([0.5, 1.0, 2.0], 1, length(radii))
+    res = Sunny.PowderIntensities(cryst, radii, energies, data)
+
+    # Check that isotropic Gaussian broadening leaves intensities uniform
+    res2 = Sunny.broaden_powder_intensities(res; fwhm=2.0)
+    @test res.data ≈ res2.data
+
+
+    # Create dummy PowderIntensities with Dirac-δ distribution in |q|
+    data = zero(res.data)
+    data[:, 10] = [4, 5, 6]
+    res = Sunny.PowderIntensities(cryst, radii, energies, data)
+
+    # Perform isotropic broadening
+    res2 = Sunny.broaden_powder_intensities(res; fwhm=2.0)
+
+    # Check that the integrated intensity ∫ ρ (4πq²) dq = 1 is invariant under
+    # broadening
+    function integrated_intensity(ρs, qs)
+        dq = qs[2] - qs[1]
+        sum(4π * q^2 * dq * ρ for (ρ, q) in zip(ρs, qs))
+    end
+    I1 = [integrated_intensity(res.data[i, :], radii) for i in axes(res.data, 1)]
+    I2 = [integrated_intensity(res2.data[i, :], radii) for i in axes(res2.data, 1)]
+    @test I1 ≈ I2
 end

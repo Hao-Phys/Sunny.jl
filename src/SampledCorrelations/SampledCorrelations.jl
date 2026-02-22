@@ -14,8 +14,8 @@ mutable struct SampledCorrelations
     const corr_pairs   :: Vector{NTuple{2, Int}}                 # (ncorr)
 
     # Trajectory specs
+    const integrator   :: AbstractIntegrator                     # Integrator for calculating sample trajectories.
     const measperiod   :: Int                                    # Steps to skip between saving observables (i.e., downsampling factor for trajectories)
-    const dt           :: Float64                                # Step size for trajectory integration 
     nsamples           :: Int64                                  # Number of accumulated samples (single number saved as array for mutability)
 
     # Buffers and precomputed data 
@@ -25,6 +25,24 @@ mutable struct SampledCorrelations
     const time_fft!    :: FFTW.AbstractFFTs.Plan                 # Pre-planned time FFT for samplebuf
     const corr_fft!    :: FFTW.AbstractFFTs.Plan                 # Pre-planned time FFT for corrbuf 
     const corr_ifft!   :: FFTW.AbstractFFTs.Plan                 # Pre-planned time IFFT for corrbuf 
+end
+
+function Base.show(io::IO, ::SampledCorrelations)
+    print(io, "SampledCorrelations")
+    # TODO: Add correlation info?
+end
+
+function Base.show(io::IO, ::MIME"text/plain", sc::SampledCorrelations)
+    (; crystal, nsamples) = sc
+    nω = round(Int, size(sc.data)[7]/2)
+    sys_dims = size(sc.data[4:6])
+    printstyled(io, "SampledCorrelations"; bold=true, color=:underline)
+    println(io," ($(Base.format_bytes(Base.summarysize(sc))))")
+    print(io,"[")
+    printstyled(io,"S(q,ω)"; bold=true)
+    print(io," | nω = $nω, Δω = $(round(sc.Δω, digits=4))")
+    println(io," | $nsamples $(nsamples > 1 ? "samples" : "sample")]")
+    println(io,"Lattice: $sys_dims × $(natoms(crystal))")
 end
 
 function Base.getproperty(sc::SampledCorrelations, sym::Symbol)
@@ -39,6 +57,41 @@ function Base.setproperty!(sc::SampledCorrelations, sym::Symbol, val)
     else
         setfield!(sc, sym, val)
     end
+end
+
+"""
+    SampledCorrelationsStatic(sys::System; measure)
+
+An object to accumulate samples of static pair correlations. It is similar to
+[`SampledCorrelations`](@ref), but no time-integration will be performed on
+calls to [`add_sample!`](@ref). The resulting object can be used with
+[`intensities_static`](@ref) to calculate statistics from the classical
+Boltzmann distribution. Dynamical [`intensities`](@ref) data, however, will be
+unavailable. Similarly, classical-to-quantum corrections that rely on the
+excitation spectrum cannot be performed.
+"""
+struct SampledCorrelationsStatic
+    parent :: SampledCorrelations
+end
+
+function SampledCorrelationsStatic(sys::System; measure, calculate_errors=false)
+    parent = SampledCorrelations(sys; measure, energies=nothing, dt=NaN, calculate_errors)
+    return SampledCorrelationsStatic(parent)
+end
+
+function Base.show(io::IO, ::SampledCorrelationsStatic)
+    print(io, "SampledCorrelationsStatic")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", sc::SampledCorrelationsStatic)
+    (; crystal, nsamples) = sc.parent
+    sys_dims = size(sc.parent.data[4:6])
+    printstyled(io, "SampledCorrelationsStatic"; bold=true, color=:underline)
+    println(io," ($(Base.format_bytes(Base.summarysize(sc))))")
+    print(io,"[")
+    printstyled(io,"S(q)"; bold=true)
+    println(io," | $nsamples $(nsamples > 1 ? "samples" : "sample")]")
+    println(io,"Lattice: $sys_dims × $(natoms(crystal))")
 end
 
 """
@@ -57,9 +110,13 @@ function clone_correlations(sc::SampledCorrelations)
     return SampledCorrelations(
         copy(sc.data), M, sc.crystal, sc.origin_crystal, sc.Δω,
         deepcopy(sc.measure), copy(sc.observables), copy(sc.positions), copy(sc.atom_idcs), copy(sc.corr_pairs),
-        sc.measperiod, sc.dt, sc.nsamples,
+        copy(sc.integrator), sc.measperiod, sc.nsamples,
         copy(sc.samplebuf), copy(sc.corrbuf), space_fft!, time_fft!, corr_fft!, corr_ifft!
     )
+end
+
+function clone_correlations(sc::SampledCorrelationsStatic)
+    return SampledCorrelationsStatic(clone_correlations(sc.parent))
 end
 
 """
@@ -83,6 +140,12 @@ function merge_correlations(scs::Vector{SampledCorrelations})
     end
     sc_merged
 end
+
+function merge_correlations(scs::Vector{SampledCorrelationsStatic})
+    sc_merged = merge_correlations([sc.parent for sc in scs]) 
+    return SampledCorrelationsStatic(sc_merged)
+end
+
 
 # Determine a step size and down sampling factor that results in precise
 # satisfaction of user-specified energy values.
@@ -133,7 +196,7 @@ can can then be extracted as pair-correlation [`intensities`](@ref) with
 appropriate classical-to-quantum correction factors. See also
 [`intensities_static`](@ref), which integrates over energy.
 """
-function SampledCorrelations(sys::System; measure, energies, dt, calculate_errors=false, positions=nothing)
+function SampledCorrelations(sys::System; measure, energies, dt, calculate_errors=false, positions=nothing, integrator=ImplicitMidpoint())
     if isnothing(energies)
         n_all_ω = 1
         measperiod = 1
@@ -149,6 +212,9 @@ function SampledCorrelations(sys::System; measure, energies, dt, calculate_error
         dt, measperiod = adjusted_dt_and_downsampling_factor(dt, nω, ωmax)
         Δω = ωmax/(nω-1)
     end
+
+    isnan(integrator.dt) || error("Timestep of `integrator` must be uninitialized.")
+    integrator.dt = dt
 
     # Determine the positions of the observables in the MeasureSpec. By default,
     # these will just be the atom indices. 
@@ -196,62 +262,8 @@ function SampledCorrelations(sys::System; measure, energies, dt, calculate_error
     origin_crystal = isnothing(sys.origin) ? nothing : sys.origin.crystal
     sc = SampledCorrelations(data, M, sys.crystal, origin_crystal, Δω,
                              measure, copy(measure.observables), positions, atom_idcs, copy(measure.corr_pairs),
-                             measperiod, dt, nsamples,
+                             integrator, measperiod, nsamples,
                              samplebuf, corrbuf, space_fft!, time_fft!, corr_fft!, corr_ifft!)
 
     return sc
-end
-
-"""
-    SampledCorrelationsStatic(sys::System; measure)
-
-An object to accumulate samples of static pair correlations. It is similar to
-[`SampledCorrelations`](@ref), but no time-integration will be performed on
-calls to [`add_sample!`](@ref). The resulting object can be used with
-[`intensities_static`](@ref) to calculate statistics from the classical
-Boltzmann distribution. Dynamical [`intensities`](@ref) data, however, will be
-unavailable. Similarly, classical-to-quantum corrections that rely on the
-excitation spectrum cannot be performed.
-"""
-struct SampledCorrelationsStatic
-    parent :: SampledCorrelations
-end
-
-function SampledCorrelationsStatic(sys::System; measure, calculate_errors=false)
-    parent = SampledCorrelations(sys; measure, energies=nothing, dt=NaN, calculate_errors)
-    return SampledCorrelationsStatic(parent)
-end
-
-function Base.show(io::IO, ::SampledCorrelations)
-    print(io, "SampledCorrelations")
-    # TODO: Add correlation info?
-end
-
-function Base.show(io::IO, ::SampledCorrelationsStatic)
-    print(io, "SampledCorrelationsStatic")
-end
-
-
-function Base.show(io::IO, ::MIME"text/plain", sc::SampledCorrelations)
-    (; crystal, nsamples) = sc
-    nω = round(Int, size(sc.data)[7]/2)
-    sys_dims = size(sc.data[4:6])
-    printstyled(io, "SampledCorrelations"; bold=true, color=:underline)
-    println(io," ($(Base.format_bytes(Base.summarysize(sc))))")
-    print(io,"[")
-    printstyled(io,"S(q,ω)"; bold=true)
-    print(io," | nω = $nω, Δω = $(round(sc.Δω, digits=4))")
-    println(io," | $nsamples $(nsamples > 1 ? "samples" : "sample")]")
-    println(io,"Lattice: $sys_dims × $(natoms(crystal))")
-end
-
-function Base.show(io::IO, ::MIME"text/plain", sc::SampledCorrelationsStatic)
-    (; crystal, nsamples) = sc.parent
-    sys_dims = size(sc.parent.data[4:6])
-    printstyled(io, "SampledCorrelationsStatic"; bold=true, color=:underline)
-    println(io," ($(Base.format_bytes(Base.summarysize(sc))))")
-    print(io,"[")
-    printstyled(io,"S(q)"; bold=true)
-    println(io," | $nsamples $(nsamples > 1 ? "samples" : "sample")]")
-    println(io,"Lattice: $sys_dims × $(natoms(crystal))")
 end

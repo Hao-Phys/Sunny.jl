@@ -17,17 +17,21 @@ abstract type AbstractSpinWaveTheory end
 """
     SpinWaveTheory(sys::System; measure, regularization=1e-8)
 
-Constructs an object to perform linear spin wave theory. The system must be in
-an energy minimizing configuration. Enables calculation of [`dispersion`](@ref)
-bands. If pair correlations are specified with `correspec`, one can also
-calculate [`intensities_bands`](@ref) and broadened [`intensities`](@ref).
+Constructs an object to perform linear spin wave theory. The `measure` object
+specifies observable fields, ``𝐪``-dependent contractions, and form factors.
+Common choices are [`ssf_perp`](@ref), [`ssf_trace`](@ref), and
+[`ssf_custom`](@ref). The resulting `SpinWaveTheory` object can be used to
+calculate [`intensities_bands`](@ref) and broadened [`intensities`](@ref). If
+`measure=nothing`, it is still possible to calculate the [`dispersion`](@ref)
+curves. Eigenvectors describing the Bogoliubov bosons are available in
+[`excitations`](@ref).
 
-The spins in system must be energy-minimized, otherwise the Cholesky step of the
-Bogoliubov diagonalization procedure will fail. The parameter `regularization`
-adds a small positive shift to the diagonal of the dynamical matrix to avoid
-numerical issues with quasi-particle modes of vanishing energy. Physically, this
-shift can be interpreted as application of an inhomogeneous field aligned with
-the magnetic ordering.
+The magnetic structure in `sys` must be energy minimized, otherwise the Cholesky
+step of the Bogoliubov diagonalization procedure will fail. The parameter
+`regularization` adds a small positive shift to the diagonal of the dynamical
+matrix to avoid numerical issues with quasi-particle modes of vanishing energy.
+Physically, this shift can be interpreted as application of an inhomogeneous
+field aligned with the magnetic ordering.
 """
 struct SpinWaveTheory <: AbstractSpinWaveTheory
     sys            :: System
@@ -43,25 +47,13 @@ function SpinWaveTheory(sys::System; measure::Union{Nothing, MeasureSpec}, regul
     end
 
     measure = @something measure empty_measurespec(sys)
-    if nsites(sys) != prod(size(measure.observables)[2:5])
+    if size(eachsite(sys)) != size(measure.observables)[2:5]
         error("Size mismatch. Check that measure is built using consistent system.")
     end
 
-    # Create single chemical cell that matches the full system size.
+    # Create single enlarged chemical cell that matches the full system size.
     new_shape = cell_shape(sys) * diagm(Vec3(sys.dims))
     new_cryst = reshape_crystal(orig_crystal(sys), new_shape)
-
-    # Sort crystal positions so that their order matches sites in sys. Quadratic
-    # scaling in system size.
-    global_positions = global_position.(Ref(sys), vec(eachsite(sys)))
-    p = map(new_cryst.positions) do r
-        pos = new_cryst.latvecs * r
-        findfirst(global_positions) do refpos
-            isapprox(pos, refpos, atol=new_cryst.symprec)
-        end
-    end
-    @assert allunique(p)
-    permute_sites!(new_cryst, p)
 
     # Create a new system with dims (1,1,1). A clone happens in all cases.
     sys = reshape_supercell_aux(sys, new_cryst, (1,1,1))
@@ -89,9 +81,13 @@ function nbands(swt::SpinWaveTheory)
 end
 
 
+function to_standard_rlu(sys::System, q_reshaped)
+    return orig_crystal(sys).recipvecs \ (sys.crystal.recipvecs * q_reshaped)
+end
+
 # Given q in reciprocal lattice units (RLU) for the original crystal, return a
 # q_reshaped in RLU for the possibly-reshaped crystal.
-function to_reshaped_rlu(sys::System{N}, q) where N
+function to_reshaped_rlu(sys::System, q)
     return sys.crystal.recipvecs \ (orig_crystal(sys).recipvecs * q)
 end
 
@@ -190,7 +186,14 @@ function swt_data(sys::System{N}, measure) where N
         # Create unitary that rotates [0, ..., 0, 1] into ground state direction
         # Z that defines quantization axis
         Z = sys.coherents[i]
-        U = hcat(nullspace(Z'), Z)
+
+        U = if iszero(Z)
+            # Set all operators on a vacant site to zero
+            zeros(ComplexF64, N, N)
+        else
+            # Build unitary U satisfying U e_N ∝ Z.
+            hcat(nullspace(Z'), Z)
+        end
         local_unitaries[i] = U
 
         # Rotate observables into local reference frames
@@ -209,13 +212,13 @@ function swt_data(sys::System{N}, measure) where N
         Ui = local_unitaries[i]
         int = sys.interactions_union[i]
 
-        # Accumulate Zeeman terms into OnsiteCoupling
+        # Zeeman coupling operator
         S = spin_matrices_of_dim(; N)
         B = sys.gs[i]' * sys.extfield[i]
-        int.onsite += B' * S
+        zeeman = B' * S
 
-        # Rotate onsite anisotropy
-        int.onsite = Hermitian(Ui' * int.onsite * Ui) 
+        # Merge and rotate all onsite couplings
+        int.onsite = Hermitian(Ui' * (zeeman + int.onsite) * Ui)
 
         # Transform pair couplings into tensor decomposition and rotate.
         pair_new = PairCoupling[]
@@ -248,13 +251,16 @@ function swt_data(sys::System{0}, measure)
 
     # Operators for rotating vectors into local frame
     Rs = map(1:Na) do i
-        # Direction n of dipole will define rotation R that aligns the
-        # quantization axis.
-        n = normalize(sys.dipoles[1, 1, 1, i])
+        # Defines quantization axis.
+        n = sys.dipoles[1, 1, 1, i]
 
-        # Build matrix that rotates from z to n.
-        R = rotation_between_vectors([0, 0, 1], n)
-        @assert R * [0, 0, 1] ≈ n
+        R = if iszero(n)
+            # Set all operators on a vacant site to zero
+            zero(Mat3)
+        else
+            # Build rotation R satisfying R z ∝ n.
+            rotation_between_vectors([0, 0, 1], n)
+        end
 
         # Rotation about the quantization axis is a U(1) gauge symmetry. The
         # angle θ below, for each atom, is arbitrary. We include this rotation
@@ -264,7 +270,9 @@ function swt_data(sys::System{0}, measure)
     end
 
     # Operators for rotating Stevens quadrupoles into local frame
-    Vs = Mat5.(operator_for_stevens_rotation.(2, Rs))
+    Vs = map(Rs) do R
+        iszero(R) ? zero(Mat5) : Mat5(operator_for_stevens_rotation(2, R))
+    end
 
     # Observable is semantically a 1x3 row vector but stored in transpose
     # (column) form. To achieve effective right-multiplication by R, we should
@@ -273,10 +281,12 @@ function swt_data(sys::System{0}, measure)
     obs_localized = [Rs[i]' * obs[μ, i] for μ in 1:Nobs, i in 1:Na]
 
     # Precompute transformed exchange matrices and store in sys.interactions_union.
-    for ints in sys.interactions_union
-        for c in eachindex(ints.pair)
-            (; bond, scalar, bilin, biquad, general) = ints.pair[c]
-            (; i, j) = bond
+    for (i, int) in enumerate(sys.interactions_union)
+        for c in eachindex(int.pair)
+            (; bond, scalar, bilin, biquad, general) = int.pair[c]
+
+            @assert i == bond.i
+            j = bond.j
 
             if !iszero(bilin)  # Leave zero if already zero
                 J = Mat3(bilin*I)
@@ -291,13 +301,13 @@ function swt_data(sys::System{0}, measure)
 
             @assert isempty(general.data)
 
-            ints.pair[c] = PairCoupling(bond, scalar, bilin, biquad, general)
+            int.pair[c] = PairCoupling(bond, scalar, bilin, biquad, general)
         end
     end
 
     # Rotated Stevens expansion.
     cs = map(sys.interactions_union, Rs) do int, R
-        rotate_operator(int.onsite, R)
+        iszero(R) ? empty_anisotropy(sys.mode, 0) : rotate_operator(int.onsite, R)
     end
 
     # Square root of spin magnitudes

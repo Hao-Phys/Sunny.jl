@@ -36,6 +36,18 @@
 
             [[0, 1/2, 0]]
         """
+    capt = IOCapture.capture() do
+        suggest_magnetic_supercell([[1/2,0,0], [0,1/2,0]])
+    end
+    @test capt.output == """
+        Possible magnetic supercell in multiples of lattice vectors:
+
+            [2 0 0; 0 2 0; 0 0 1]
+
+        for the rationalized wavevectors:
+
+            [[1/2, 0, 0], [0, 1/2, 0]]
+        """
 
     A1 = [1 0 0; 0 2 0; 0 0 1]
     A2 = [1 0 0; 1 2 0; 0 0 1]
@@ -43,7 +55,7 @@
     newsys2 = reshape_supercell(sys, A2)
 
     @test energy_per_site(sys) ≈ 2.55
-    
+
     newsys = reshape_supercell(sys, A1)
     @test energy_per_site(newsys) ≈ 2.55
     newsys = reshape_supercell(sys, A2)
@@ -55,25 +67,25 @@ end
 
 @testitem "Validate reshaping" begin
     using LinearAlgebra
-    
+
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
     positions = [[0, 0, 0]/2, [1, 1, 1]/2]
     cryst = Crystal(latvecs, positions)
     sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole)
-    
+
     primcell = primitive_cell(cryst)
     reshape_supercell(sys, Diagonal([2, 3, 4])) # Fine
     reshape_supercell(sys, primcell) # Fine
     reshape_supercell(sys, primcell * Diagonal([2, 3, 4])) # Fine
     msg = "Elements of `primitive_cell(cryst) \\ shape` must be integer. Calculated [3.5 0.5 -0.5; 1.0 3.0 -1.0; 0.5 -0.5 2.5]."
     @test_throws msg reshape_supercell(sys, Diagonal([2, 3, 4]) * primcell)
-    
+
     positions = [[0, 0, 0]]
     cryst = Crystal(latvecs, positions)
     sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole)
     reshape_supercell(sys, Diagonal([2.0, 3, 4]))
     msg = "Elements of `shape` must be integer. Received [2.5 0.0 0.0; 0.0 3.0 0.0; 0.0 0.0 4.0]."
-    @test_throws msg reshape_supercell(sys, Diagonal([2.5, 3, 4]))
+    @test_throws msg reshape_supercell(sys, diagm([2.5, 3, 4]))
 end
 
 
@@ -104,16 +116,16 @@ end
     cryst = Crystal(latvecs, [[0,0,0]])
     sys = System(cryst, [1 => Moment(s=1, g=2)], :dipole; dims=(3, 3, 3))
     randomize_spins!(sys)
-    
+
     # Commensurate shear that is specially designed to preserve the periodicity of
     # the system volume
     sys2 = reshape_supercell(sys, [3 3 0; 0 3 0; 0 0 3])
-    
+
     # Users always specify a bond using atom indices of the original unit cell,
     # but `sys2.interactions_union` is internally reindexed.
     set_exchange!(sys,  1.0, Bond(1, 1, [1, 0, 0]))
     set_exchange!(sys2, 1.0, Bond(1, 1, [1, 0, 0]))
-    
+
     @test energy(sys) ≈ energy(sys2)
 end
 
@@ -182,7 +194,7 @@ end
     cryst = Crystal(latvecs, [[0,0,0]], 164)
     sys = System(cryst, [1 => Moment(s=1, g=2)], :SUN; dims=(4, 4, 4), seed=0)
 
-    J1pm   = -0.236 
+    J1pm   = -0.236
     J1pmpm = -0.161
     J1zpm  = -0.261
     J2pm   = 0.026
@@ -198,7 +210,7 @@ end
     J′1zz  = 0.051
     J′2azz = 0.073
 
-    J1xx = J1pm + J1pmpm 
+    J1xx = J1pm + J1pmpm
     J1yy = J1pm - J1pmpm
     J1yz = J1zpm
 

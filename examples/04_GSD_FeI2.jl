@@ -7,10 +7,10 @@
 # states](https://doi.org/10.1103/PhysRevB.106.054423).
 #
 # Compared to spin wave theory, classical spin dynamics in real-space is
-# typically much slower, and is limited in ``𝐪``-space resolution. The
-# approach, however, allows for thermal fluctuations, can be used to explore
-# [finite temperature phases](https://doi.org/10.1103/PhysRevB.109.014427), and
-# enables the study of [highly non-equilibrium
+# typically much slower and is limited in ``𝐪``-space resolution. The approach,
+# however, allows for thermal fluctuations. This allows to explore [finite
+# temperature phases](https://doi.org/10.1103/PhysRevB.109.014427) and enables
+# the study of [non-equilibrium
 # processes](https://doi.org/10.1103/PhysRevB.106.235154).
 #
 # The structure of this tutorial largely follows the [previous study of CoRh₂O₄
@@ -155,7 +155,7 @@ end
 # statistical noise could be reduced by averaging over more thermal samples.
 
 res = intensities(sc, [[0, 0, 0], [0.5, 0.5, 0.5]]; energies, langevin.kT)
-fig = lines(res.energies, res.data[:, 1]; axis=(xlabel="meV", ylabel="Intensity"), label="(0,0,0)")
+fig = lines(res.energies, res.data[:, 1]; axis=(xlabel="Energy (meV)", ylabel="Intensity"), label="(0,0,0)")
 lines!(res.energies, res.data[:, 2]; label="(π,π,π)")
 axislegend()
 fig
@@ -174,7 +174,7 @@ qs = [[0,   0, 0],  # List of wave vectors that define a path
       [0,   0, 0]] 
 qpath = q_space_path(cryst, qs, 500)
 res = intensities(sc, qpath; energies, langevin.kT)
-plot_intensities(res; colorrange=(0.0, 1.0), title="Intensities at T = 2.3 K")
+plot_intensities(res; units, colorrange=(0.0, 1.0), title="Intensities at T = 2.3 K")
 
 # One can also view the intensity along a [`q_space_grid`](@ref) for a fixed
 # energy value. Alternatively, use [`intensities_static`](@ref) to integrate

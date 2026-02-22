@@ -27,8 +27,8 @@ propose_flip(sys::System{N}, site) where N = flip(getspin(sys, site))
 
 Generate a proposal function that adds a Gaussian perturbation to the existing
 spin state. In `:dipole` mode, the procedure is to first introduce a random
-three-vector perturbation ``𝐒′ = 𝐒 + |𝐒| ξ`` and then return the properly
-normalized spin ``|𝐒| (𝐒′/|𝐒′|)``. Each component of the random vector ``ξ``
+three-vector perturbation ``𝐒' = 𝐒 + |𝐒| ξ`` and then return the properly
+normalized spin ``|𝐒| (𝐒'/|𝐒'|)``. Each component of the random vector ``ξ``
 is Gaussian distributed with a standard deviation of `magnitude`; the latter is
 dimensionless and typically smaller than one. 
 
@@ -42,20 +42,7 @@ In the limit of very large `magnitude`, this function coincides with
 Consider also [`Langevin`](@ref) sampling, which is rejection free.
 """
 function propose_delta(magnitude)
-    function ret(sys::System{N}, site) where N
-        κ = sys.κs[site]
-        if N == 0
-            S = sys.dipoles[site] + magnitude * κ * randn(sys.rng, Vec3)
-            S = normalize_dipole(S, κ)
-            return SpinState(S, CVec{0}())        
-        else
-            Z = sys.coherents[site] + magnitude * sqrt(κ) * randn(sys.rng, CVec{N})
-            Z = normalize_ket(Z, κ)
-            S = expected_spin(Z)
-            return SpinState(S, Z)
-        end
-    end
-    return ret
+    return (sys, site) -> perturbed_spin(sys, site, magnitude)
 end
 
 """
@@ -144,7 +131,7 @@ function Base.copy(sampler::LocalSampler{F}) where F
 end
 
 function step!(sys::System{N}, sampler::LocalSampler) where N
-    niters = round(Int, sampler.nsweeps*length(sys.dipoles), RoundUp)
+    niters = round(Int, sampler.nsweeps*nsites(sys), RoundUp)
     for _ in 1:niters
         site = rand(sys.rng, eachsite(sys))
         state = sampler.propose(sys, site)

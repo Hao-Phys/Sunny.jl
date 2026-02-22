@@ -56,10 +56,11 @@ end
 
 
 # Returns |1 + nB(ω)| where nB(ω) = 1 / (exp(βω) - 1) is the Bose function.
+# Equivalent to |1 / expm1(-βω)| where expm1(x) = e^x-1.
 function thermal_prefactor(ω; kT)
     @assert kT >= 0
     iszero(ω) && return Inf
-    return abs(1 / (1 - exp(-ω/kT)))
+    return abs(1 / expm1(-ω/kT))
 end
 
 
@@ -96,8 +97,12 @@ function excitations!(T, tmp, swt::SpinWaveTheory, q)
 
     try
         return bogoliubov!(T, tmp)
-    catch _
-        error("Instability at wavevector q = $q")
+    catch err
+        if err isa PosDefException
+            rethrow(InstabilityError("Not an energy-minimum; wavevector q = $(vec3_to_string(q)) unstable."))
+        else
+            rethrow(err)
+        end
     end
 end
 
@@ -148,6 +153,7 @@ function intensities_bands(swt::SpinWaveTheory, qpts; kT=0, with_negative=false)
 
     qpts = convert(AbstractQPoints, qpts)
     cryst = orig_crystal(sys)
+    rs_global = global_positions(sys)
 
     # Number of (magnetic) atoms in magnetic cell
     @assert sys.dims == (1,1,1)
@@ -171,13 +177,12 @@ function intensities_bands(swt::SpinWaveTheory, qpts; kT=0, with_negative=false)
     disp = zeros(Float64, L, Nq)
     intensity = zeros(eltype(measure), L, Nq)
 
-
     for (iq, q) in enumerate(qpts.qs)
         q_global = cryst.recipvecs * q
         view(disp, :, iq) .= view(excitations!(T, H, swt, q), 1:L)
 
         for i in 1:Na, μ in 1:Nobs
-            r_global = global_position(sys, (1,1,1,i)) # + offsets[μ,i]
+            r_global = rs_global[i] # + offsets[μ, i]
             ff = get_swt_formfactor(measure, μ, i)
             Avec_pref[μ, i] = exp(- im * dot(q_global, r_global))
             Avec_pref[μ, i] *= compute_form_factor(ff, norm2(q_global))
@@ -213,10 +218,10 @@ function intensities_bands(swt::SpinWaveTheory, qpts; kT=0, with_negative=false)
                 end
             end
 
-            map!(corrbuf, measure.corr_pairs) do (α, β)
-                Avec[α] * conj(Avec[β]) / Ncells
+            map!(corrbuf, measure.corr_pairs) do (μ, ν)
+                Avec[μ] * conj(Avec[ν]) / Ncells
             end
-            intensity[band, iq] = thermal_prefactor(disp[band]; kT) * measure.combiner(q_global, corrbuf)
+            intensity[band, iq] = thermal_prefactor(disp[band, iq]; kT) * measure.combiner(q_global, corrbuf)
         end
     end
 
@@ -233,6 +238,7 @@ Like [`intensities`](@ref), but makes use of storage space `data` to avoid
 allocation costs.
 """
 function intensities!(data, swt::AbstractSpinWaveTheory, qpts; energies, kernel::AbstractBroadening, kT=0)
+    qpts = convert(AbstractQPoints, qpts)
     @assert size(data) == (length(energies), size(qpts.qs)...)
     bands = intensities_bands(swt, qpts; kT)
     @assert eltype(bands) == eltype(data)

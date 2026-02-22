@@ -4,7 +4,7 @@
     cryst = Sunny.diamond_crystal()
     damping = 0.1
     dt = 0.005
-    
+
     # Check that magnitude of coherent (SUN=true) or dipole (SUN=false) is
     # invariant under the dynamics
     let
@@ -71,7 +71,7 @@
             end
             return first(sys.dipoles)
         end
-    
+
         κ = 2.0
         for mode in (:SUN, :dipole)
             s1 = gen_trajectory(1, dt, add_linear_interactions!, mode)
@@ -95,7 +95,7 @@ end
     cryst = Crystal(latvecs, [[0,0,0]], "P1")
     s = 3
     λ = Sunny.rcs_factors(s)
-    
+
     for k in (2, 4, 6)
         c = randn(2k+1)
         E1, E2 = map([:dipole, :dipole_uncorrected]) do mode
@@ -108,6 +108,34 @@ end
     end
 end
 
+@testitem "Anisotropy SU(N) equivalence" begin
+    latvecs = lattice_vectors(1.0, 1.1, 1.0, 90, 90, 90)
+    msg = "Nonstandard tetragonal cell for spacegroup 123. Consider `standardize`."
+    cryst = @test_logs (:info, msg) Crystal(latvecs, [[0, 0, 0]])
+
+    # Dipole system with renormalized anisotropy
+    sys0 = System(cryst, [1 => Moment(s=3, g=2)], :dipole)
+    randomize_spins!(sys0)
+
+    i = 1
+    O = stevens_matrices(spin_label(sys0, i))
+    Λ = randn()*(O[2,0]+3O[2,2]) +
+        randn()*(O[4,0]-5O[4,2]) + randn()*(O[4,0]+5O[4,4]) +
+        randn()*(O[6,0]-21O[6,4]) + randn()*(O[6,0]+(105/16)O[6,2]+(231/16)O[6,6])
+    set_onsite_coupling!(sys0, Λ, i)
+    E0 = energy(sys0)
+
+    # Corresponding SU(N) system
+    sys = System(cryst, [1 => Moment(s=3, g=2)], :SUN)
+    for site in eachsite(sys)
+        set_dipole!(sys, sys0.dipoles[site], site)
+    end
+    set_onsite_coupling!(sys, Λ, i)
+    E = energy(sys)
+
+    @test E ≈ E0
+end
+
 
 @testitem "Biquadratic renormalization" begin
     cryst = Sunny.square_crystal()
@@ -115,15 +143,16 @@ end
     s = 3/2
     sys1 = System(cryst, [1 => Moment(; s, g=2)], :dipole_uncorrected, seed=0)
     sys2 = System(cryst, [1 => Moment(; s, g=2)], :dipole, seed=0)
+    bond = Bond(1, 1, [1, 0, 0])
 
     # Reference scalar biquadratic without renormalization
-    set_exchange!(sys1, 0, Bond(1, 1, [1,0,0]); biquad=1)
+    set_exchange!(sys1, 0, bond; biquad=1)
     @test sys1.interactions_union[1].pair[1].bilin ≈ 0
     @test sys1.interactions_union[1].pair[1].biquad ≈ 1
 
     # Same thing, but with renormalization
     rcs = Sunny.rcs_factors(s)[2]^2
-    set_exchange!(sys2, 0, Bond(1, 1, [1,0,0]); biquad=1)
+    set_exchange!(sys2, 0, bond; biquad=1)
     @test rcs ≈ (1-1/2s)^2
     @test sys2.interactions_union[1].pair[1].bilin ≈ -1/2
     @test sys2.interactions_union[1].pair[1].biquad ≈ 1 * rcs
@@ -133,7 +162,8 @@ end
     # factor:
     #   1. (S1'*S2)^2 + S1'*S2/2 (a pure coupling of Stevens quadrupoles)
     #   2. -S1'*S2/2             (a Heisenberg shift)
-    set_pair_coupling!(sys2, (S1, S2) -> (S1'*S2)^2, Bond(1, 1, [1,0,0]))
+    msg = "Overwriting coupling for $bond"
+    @test_logs (:warn, msg) set_pair_coupling!(sys2, (S1, S2) -> (S1'*S2)^2, bond)
     @test sys2.interactions_union[1].pair[1].bilin ≈ -1/2
     @test sys2.interactions_union[1].pair[1].biquad ≈ 1 * rcs
 end
@@ -141,7 +171,8 @@ end
 @testitem "Biquadratic renormalization 2" begin
     # Simple dimer model
     latvecs = lattice_vectors(1, 1, 1, 90, 90, 90)
-    cryst = Crystal(latvecs, [[0, 0, 0], [0.3, 0, 0]]; types=["A", "B"])
+    msg = "Nonstandard tetragonal cell for spacegroup 99. Consider `standardize`."
+    cryst = @test_logs (:info, msg) Crystal(latvecs, [[0, 0, 0], [0.3, 0, 0]]; types=["A", "B"])
     s1 = 3/2
     s2 = 2
     v1 = randn(3)
@@ -162,7 +193,8 @@ end
     set_dipole!(sys, v2, (1, 1, 1, 2))
     set_exchange!(sys, 0.0, bond; biquad)
     E_SUN_1 = energy(sys)
-    set_pair_coupling!(sys, (Si, Sj) -> biquad * (Si'*Sj)^2, bond)
+    msg = "Overwriting coupling for $bond"
+    @test_logs (:warn, msg) set_pair_coupling!(sys, (Si, Sj) -> biquad * (Si'*Sj)^2, bond)
     E_SUN_2 = energy(sys)
     @test E_dipole ≈ E_SUN_1 ≈ E_SUN_2
 
@@ -173,4 +205,46 @@ end
     set_exchange!(sys, 0.0, bond; biquad)
     E_large_s = energy(sys)
     @test E_large_s ≈ biquad * (sys.dipoles[1]' * sys.dipoles[2])^2
+end
+
+@testitem "Inhomogeneous spin s" begin
+    latvecs = lattice_vectors(1, 1, 2, 90, 90, 90)
+    positions = [[0, 0, 0], [0, 0, 0.5]]
+    cryst = Crystal(latvecs, positions, 1)
+
+    sys = System(cryst, [1 => Moment(; s=1, g=2), 2 => Moment(; s=3/2, g=2)], :dipole)
+    randomize_spins!(sys)
+
+    set_onsite_coupling!(sys, S -> S[3]^2, 1)
+    set_onsite_coupling!(sys, S -> S[3]^2, 2)
+    set_exchange!(sys, 1.0, Bond(1, 2, [0, 0, 0]))
+    E = energy(sys)
+
+    # Energy is unchanged with to_inhomogeneous
+    sys2 = to_inhomogeneous(sys)
+    @test energy(sys2) ≈ E
+
+    # Same energy can be obtained by setting inhomogeneous interactions
+    sys3 = System(cryst, [1 => Moment(; s=1, g=2), 2 => Moment(; s=3/2, g=2)], :dipole)
+    sys3 = to_inhomogeneous(sys3)
+    sys3.dipoles .= sys.dipoles
+    set_onsite_coupling_at!(sys3, S -> S[3]^2, (1, 1, 1, 1))
+    set_onsite_coupling_at!(sys3, S -> S[3]^2, (1, 1, 1, 2))
+    set_exchange_at!(sys3, 1.0, (1, 1, 1, 1), (1, 1, 1, 2); offset=(0, 0, 0))
+    @test energy(sys3) ≈ E
+
+    # Calling `set_spin_s_at!` will remove onsite coupling but it can be
+    # restored
+    sys4 = System(cryst, [1 => Moment(; s=2, g=2), 2 => Moment(; s=3/2, g=2)], :dipole)
+    for site in eachsite(sys4)
+        set_dipole!(sys4, sys.dipoles[site], site)
+    end
+    set_onsite_coupling!(sys4, S -> S[3]^2, 1)
+    set_onsite_coupling!(sys4, S -> S[3]^2, 2)
+    set_exchange!(sys4, 1.0, Bond(1, 2, [0, 0, 0]))
+    sys4 = to_inhomogeneous(sys4)
+    msg = "Removing onsite coupling at site (1, 1, 1, 1)."
+    @test_logs (:warn, msg) set_spin_s_at!(sys4, 1.0, (1, 1, 1, 1))
+    set_onsite_coupling_at!(sys4, S -> S[3]^2, (1, 1, 1, 1))
+    @test energy(sys4) ≈ E
 end

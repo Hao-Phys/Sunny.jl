@@ -76,39 +76,6 @@ function all_dipole_observables(sys::System{N}; apply_g) where {N}
 end
 
 
-# Based on logic in `propagate_moments`. Create one FormFactor per atom in
-# reshaped `sys.crystal`. Note that `ffs` refers to original crystal.
-function propagate_form_factors(sys::System, ffs::Vector{Pair{Int, FormFactor}})
-    cryst = orig_crystal(sys)
-    for (i, _) in ffs
-        1 <= i <= natoms(cryst) || error("Atom $i outside the valid range 1:$(natoms(cryst))")
-    end
-
-    # Unzip reference data, with respect to original crystal
-    ref_atoms = [i for (i, _) in ffs]
-    ref_ffs = [convert(FormFactor, ff) for (_, ff) in ffs]
-    ref_classes = cryst.classes[ref_atoms]
-
-    # One form factor for each atom in the original crystal
-    ffs_orig = map(enumerate(cryst.classes)) do (i, c)
-        js = findall(==(c), ref_classes)
-        isempty(js) && error("Not all sites are specified; consider including atom $i.")
-        length(js) > 1 && error("Atoms $(ref_atoms[js]) are symmetry equivalent.")
-        ref_ffs[only(js)]
-    end
-
-    # One form factor for each atom in reshaped sys.crystal
-    return map(sys.crystal.positions) do r
-        r = cryst.latvecs \ sys.crystal.latvecs * r
-        ffs_orig[position_to_atom(cryst, r)]
-    end
-end
-
-function propagate_form_factors(sys::System, _::Nothing)
-    fill(one(FormFactor), natoms(sys.crystal))
-end
-
-
 """
     ssf_custom(f, sys::System; apply_g=true, formfactors=nothing)
 
@@ -122,7 +89,7 @@ With specific choices of `f`, one can obtain measurements such as defined in
 
 By default, the g-factor or tensor is applied at each site, such that the
 structure factor components are correlations between the magnetic moment
-operators. Set `apply_g = false` to measure correlations between the bare spin
+operators. Set `apply_g=false` to measure correlations between the bare spin
 operators.
 
 The optional `formfactors` comprise a list of pairs `[i1 => FormFactor(...), i2
@@ -136,11 +103,11 @@ Intended for use with [`SpinWaveTheory`](@ref) and instances of
 # Examples
 
 ```julia
-# Measure all 3×3 structure factor components Sᵅᵝ
+# Measure all structure factor components Sᵅᵝ as a 3×3 matrix
 measure = ssf_custom((q, ssf) -> ssf, sys)
 
 # Measure the structure factor trace Sᵅᵅ
-measure = ssf_custom((q, ssf) -> real(sum(ssf)), sys)
+measure = ssf_custom((q, ssf) -> real(ssf[1, 1] + ssf[2, 2] + ssf[3, 3]), sys)
 ```
 
 See also the Sunny documentation on [Structure Factor Conventions](@ref).
@@ -148,14 +115,22 @@ See also the Sunny documentation on [Structure Factor Conventions](@ref).
 function ssf_custom(f, sys::System; apply_g=true, formfactors=nothing)
     observables = all_dipole_observables(sys; apply_g)
     corr_pairs = [(3,3), (2,3), (1,3), (2,2), (1,2), (1,1)]
-    combiner(q, data) = f(q, SA[
-        data[6]       data[5]       data[3]
-        conj(data[5]) data[4]       data[2]
-        conj(data[3]) conj(data[2]) data[1]
+    combiner(q, corr) = f(q, SA[
+        corr[6]       corr[5]       corr[3]
+        conj(corr[5]) corr[4]       corr[2]
+        conj(corr[3]) conj(corr[2]) corr[1]
     ])
-    formfactors = propagate_form_factors(sys, formfactors)
+    formfactors = if isnothing(formfactors)
+        fill(one(FormFactor), natoms(sys.crystal))
+    else
+        formfactors isa Vector{Pair{Int, FormFactor}} || error("Pass formfactors as [i1 => FormFactor(...), i2 => ...]")
+        propagate_atom_data(orig_crystal(sys), sys.crystal, formfactors)
+    end
     return MeasureSpec(observables, corr_pairs, combiner, formfactors)
 end
+
+CRC.@non_differentiable MeasureSpec(observables, corr_pairs, combiner, formfactors)
+CRC.@non_differentiable ssf_custom(f, sys)
 
 """
     ssf_custom_bm(f, sys::System; u, v, apply_g=true, formfactors=nothing)

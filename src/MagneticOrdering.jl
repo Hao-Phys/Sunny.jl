@@ -1,19 +1,21 @@
 """
     print_wrapped_intensities(sys::System; nmax=10)
 
-For Bravais lattices: Prints up to `nmax` wavevectors according to their
-instantaneous (static) structure factor intensities, listed in descending order.
-For non-Bravais lattices: Performs the same analysis for each spin sublattice
-independently; the output weights are naïvely averaged over sublattices, without
-incorporating phase shift information. This procedure therefore wraps all
-wavevectors into the first Brillouin zone. Each wavevector coordinate is given
-between ``-1/2`` and ``1/2`` in reciprocal lattice units (RLU).  The output from
-this function will typically be used as input to
+Prints up to `nmax` wavevectors ``𝐪`` and their "wrapped" static structure
+factor weights. Each ``𝐪`` is exactly commensurate with the system volume and
+has components between ``-1/2`` and ``1/2`` in reciprocal lattice units (RLU).
+The output from this function will typically be used as input to
 [`suggest_magnetic_supercell`](@ref).
 
-Because this function does not incorporate phase information in its averaging
-over sublattices, the printed weights are not directly comparable with
-experiment. For that purpose, use [`SampledCorrelationsStatic`](@ref) instead.
+For simplicity, phase interference between sublattices is neglected. The
+reported weights are the sum of static structure factors
+``\\mathcal{S}_{jj}(𝐪)`` calculated independently for each sublattice ``j`` of
+the chemical cell. This is mathematically equivalent to averaging
+``\\mathcal{S}(𝐪)`` over all cells of the infinite reciprocal lattice. It is in
+this sense that the intensities are "wrapped" into the first reciprocal cell.
+
+To calculate the true ``\\mathcal{S}(𝐪)`` as an experimental observable, use
+[`SampledCorrelationsStatic`](@ref) instead.
 """
 function print_wrapped_intensities(sys::System{N}; nmax=10) where N
     sys.crystal == orig_crystal(sys) || error("Cannot perform this analysis on reshaped system.")
@@ -36,8 +38,8 @@ function print_wrapped_intensities(sys::System{N}; nmax=10) where N
         k = (Tuple(m) .- 1) ./ sys.dims
         k = [ki > 1/2 ? ki-1 : ki for ki in k]
 
-        kstr = fractional_vec3_to_string(k)
-        
+        kstr = vec3_to_string(k)
+
         if weight[m] < 0.01
             break
         end
@@ -61,7 +63,7 @@ function rationalize_simultaneously(xs; tol, maxsize)
         numers = @. round(Int, xs * denom)
         errs = @. xs - numers / denom
         if all(e -> abs(e) < tol, errs)
-            return numers, denom
+            return numers .// denom
         end
     end
     error("Wavevectors are incommensurate for lattice sizes less than $maxsize. Try increasing `tol` parameter.")
@@ -100,23 +102,27 @@ suggest_magnetic_supercell([[0, 0, 1/√5], [0, 0, 1/√7]]; tol=1e-2)
 ```
 """
 function suggest_magnetic_supercell(ks; tol=1e-12, maxsize=100)
-    new_ks = zeros(Rational{Int}, 3, length(ks))
+    eltype(ks) <: AbstractVector{<: Number} || error("Pass a list of wavevectors")
 
+    rational_ks = zeros(Rational{Int}, 3, length(ks))
     for i in 1:3
         xs = [k[i] for k in ks]
-        numers, denom = rationalize_simultaneously(xs; tol, maxsize)
-        new_ks[i, :] = numers .// denom
+        rational_ks[i, :] = rationalize_simultaneously(xs; tol, maxsize)
     end
 
-    suggest_magnetic_supercell_aux(eachcol(new_ks))
+    suggest_magnetic_supercell_aux(eachcol(rational_ks))
 end
 
 function suggest_magnetic_supercell_aux(ks)
-    denoms = denominator.(first(ks))
+    # A supercell of shape A = diagm(nmax) is guaranteed to be commensurate
+    nmax = [lcm(denominator.(row)...) for row in zip(ks...)]
+    ns = Vec3.(eachcol(diagm(nmax)))
 
-    # All possible periodic offsets, sorted by length
-    nmax = div.(denoms, 2)
-    ns = [[n1, n2, n3] for n1 in -nmax[1]:nmax[1], n2 in -nmax[2]:nmax[2], n3 in -nmax[3]:nmax[3]][:]
+    # Candidate lattice vectors for a smaller supercell
+    rg = div.(nmax, 2)
+    append!(ns, Vec3.(Iterators.product(-rg[1]:rg[1], -rg[2]:rg[2], -rg[3]:rg[3])))
+
+    # Sort by length
     sort!(ns, by=n->n'*n)
 
     # Remove zero vector
@@ -125,18 +131,12 @@ function suggest_magnetic_supercell_aux(ks)
 
     # Filter out elements of ns that are not consistent with k ∈ ks
     for k in ks
-        ns = filter(ns) do n            
+        ns = filter(ns) do n
             # Wave vector `k` in RLU is commensurate if `n⋅k` is integer,
             # corresponding to the condition `exp(-i 2π n⋅k) = 1`.
             isinteger(n⋅k)
         end
     end
-
-    # Add vectors that wrap the entire lattice to ensure that a subset of the ns
-    # span a nonzero volume.
-    push!(ns, [denoms[1], 0, 0])
-    push!(ns, [0, denoms[2], 0])
-    push!(ns, [0, 0, denoms[3]])
 
     # Goodness of supervectors A1, A2, A3. Lower is better.
     function score(A)
@@ -150,15 +150,8 @@ function suggest_magnetic_supercell_aux(ks)
         V <= 0 ? Inf : V - 1e-3*c1 - 1e-6c2
     end
 
-    # Find three vectors that span a nonzero volume which is hopefully small.
-    # This will be our initial guess for the supercell.
-    i1 = 1
-    A1 = ns[i1]
-    i2 = findfirst(n -> !iszero(n×A1), ns[i1+1:end])::Int
-    A2 = ns[i1+i2]
-    i3 = findfirst(n -> !iszero(n⋅(A1×A2)), ns[i1+i2+1:end])::Int
-    A3 = ns[i1+i2+i3]
-    best_A = [A1 A2 A3]
+    # Initial guess for the supercell
+    best_A = diagm(nmax)
     best_score = score(best_A)
 
     # Iteratively search for an improved supercell. For efficiency, restrict the
@@ -194,18 +187,10 @@ function suggest_magnetic_supercell_aux(ks)
     end
 
     # # Alternative brute force implementation, for reference
-    # push!(ns, [denoms[1],0,0])
-    # push!(ns, [0,denoms[2],0])
-    # push!(ns, [0,0,denoms[3]])
-    # for A1 in ns, A2 in ns, A3 in ns
-    #     A = [A1 A2 A3]
-    #     if best_score > score(A)
-    #         best_score = score(A)
-    #         best_A = A
-    #     end
-    # end
+    # all_As = ([A1 A2 A3] for (A1, A2, A3) in Iterators.product(ns, ns, ns))
+    # @assert minimum(score, all_As) == best_score
 
-    kstrs = join(map(fractional_vec3_to_string, ks), ", ")
+    kstrs = join(map(vec3_to_string, ks), ", ")
     println("""Possible magnetic supercell in multiples of lattice vectors:
                
                    $(repr(best_A))
@@ -224,7 +209,7 @@ function check_commensurate(sys; k)
         commensurate = commensurate && iszero(mod(sys.dims[i], denom))
     end
     if !commensurate
-        @warn "Wavevector $(fractional_vec3_to_string(k)) is incommensurate with system."
+        @warn "Wavevector $(vec3_to_string(k)) is incommensurate with system."
     end
 end
 

@@ -116,7 +116,7 @@ eachsite(esys::EntangledSystem) = eachsite(esys.sys_origin)
 eachunit(esys::EntangledSystem) = eachsite(esys.sys)
 
 energy(esys::EntangledSystem) = energy(esys.sys)
-energy_per_site(esys::EntangledSystem) = energy(esys.sys) / length(eachsite(esys.sys_origin))
+energy_per_site(esys::EntangledSystem) = energy(esys.sys) / nsites(esys.sys_origin)
 
 function clone_system(esys::EntangledSystem)
     sys = clone_system(esys.sys)
@@ -191,7 +191,8 @@ end
 # Sets the coherent state of a specified unit. The `site` refers to the
 # contracted lattice (i.e., to a "unit"). The function then updates all dipoles
 # in the uncontracted system that are determined by the coherent state. 
-function set_coherent!(esys::EntangledSystem, coherent, site) 
+function set_coherent!(esys::EntangledSystem, coherent, site)
+    site = to_cartesian(site)
     set_coherent!(esys.sys, coherent, site)
     a, b, c, unit = site.I
     for atom in atoms_in_unit(esys.contraction_info, unit)
@@ -210,8 +211,8 @@ function minimize_energy!(esys::EntangledSystem; kwargs...)
     return optout
 end
 
-function magnetic_moment(esys::EntangledSystem, site; kwargs...) 
-    magnetic_moment(esys.sys_origin, site; kwargs...)
+function magnetic_moments(esys::EntangledSystem)
+    magnetic_moments(esys.sys_origin)
 end
 
 function plot_spins(esys::EntangledSystem; kwargs...)

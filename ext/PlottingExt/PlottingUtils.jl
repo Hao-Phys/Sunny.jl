@@ -1,5 +1,5 @@
 
-getindex_cyclic(a, i) = a[mod1(i, length(a))] 
+getindex_cyclic(a, i) = a[mod1(i, length(a))]
 
 const seaborn_bright = [
     Makie.RGBf(0.00784313725490196,0.24313725490196078,1.0),
@@ -26,6 +26,38 @@ const seaborn_muted = [
     Makie.RGBf(0.8352941176470589,0.7333333333333333,0.403921568627451),
     Makie.RGBf(0.5098039215686274,0.7764705882352941,0.8862745098039215),
 ]
+
+# Numbers adapted from :thermal colormap defined in matplotlib/cmocean
+reverse_thermal_fade = let
+    data = [
+        (Makie.RGBAf(1.00, 1.00, 0.60, 0.00), 0.00),
+        (Makie.RGBAf(0.97, 0.95, 0.40, 0.30), 0.01),
+        (Makie.RGBAf(0.97, 0.95, 0.40, 0.50), 0.05),
+        (Makie.RGBAf(0.94, 0.90, 0.31, 0.70), 0.10),
+        (Makie.RGBAf(0.98, 0.80, 0.23, 0.90), 0.20),
+        (Makie.RGBAf(0.86, 0.60, 0.39, 0.95), 0.30),
+        (Makie.RGBAf(0.67, 0.40, 0.51, 1.00), 0.40),
+        (Makie.RGBAf(0.51, 0.31, 0.55, 1.00), 0.52),
+        (Makie.RGBAf(0.37, 0.24, 0.60, 1.00), 0.65),
+        (Makie.RGBAf(0.18, 0.20, 0.60, 1.00), 0.77),
+        (Makie.RGBAf(0.04, 0.18, 0.36, 1.00), 0.89),
+        (Makie.RGBAf(0.01, 0.13, 0.20, 1.00), 1.00),
+    ]
+    Makie.cgrad(getindex.(data, 1), getindex.(data, 2))
+end
+
+blue_white_red_fade = let
+    data = [
+        (Makie.RGBAf(0.00, 0.00, 1.00, 1.00), 0.00),
+        (Makie.RGBAf(0.80, 0.80, 1.00, 1.00), 0.45),
+        (Makie.RGBAf(1.00, 1.00, 1.00, 0.00), 0.495),
+        (Makie.RGBAf(1.00, 1.00, 1.00, 0.00), 0.505),
+        (Makie.RGBAf(1.00, 0.80, 0.80, 1.00), 0.55),
+        (Makie.RGBAf(1.00, 0.00, 0.00, 1.00), 1.00),
+    ]
+    Makie.cgrad(getindex.(data, 1), getindex.(data, 2))
+end
+
 
 # Colors from Jmol table, https://jmol.sourceforge.net/jscolors/
 atom_colors = let
@@ -100,8 +132,8 @@ function numbers_to_colors!(out::AbstractArray{Makie.RGBAf}, in::AbstractArray{<
         map!(out, in) do c
             # If `cmin ≤ in[i] ≤ cmax` then `0.5 ≤ x ≤ len+0.5`
             x = (c - cmin) / (cmax - cmin) * len + 0.5
-            # Round to integer and clip to range [1, len]
-            colormap[max(min(round(Int, x), len), 1)]
+            # Round to integer and clamp to range [1, len]
+            colormap[clamp(round(Int, x), 1, len)]
         end
     end
     return nothing
@@ -189,14 +221,14 @@ function add_cartesian_compass(fig, lscene; left=0, right=150, bottom=0, top=150
     # Draw arrows at origin
     pts = [Makie.Point3f(0, 0, 0), Makie.Point3f(0, 0, 0), Makie.Point3f(0, 0, 0)]
     vecs = [Makie.Point3f(1, 0, 0), Makie.Point3f(0, 1, 0), Makie.Point3f(0, 0, 1)]
-    Makie.arrows!(axcompass, pts, 0.8*vecs; color=[:red, :orange, :yellow], arrowsize=0.3, inspectable=false)
+    Makie.arrows3d!(axcompass, pts, vecs; color=[:red, :orange, :yellow], shaftradius=0.07, tiplength=0.3, inspectable=false)
 
     # Draw labels
     for (pos, text) in zip(1.2vecs, ["x", "y", "z"])
         Makie.text!(axcompass, pos; text, color=:black, fontsize=16, font=:bold, glowwidth=4.0,
             glowcolor=(:white, 0.6), align=(:center, :center), depth_shift=-1f0)
     end
-    
+
     # The intention is that the parent scene fully controls the camera, and
     # ideally the compass "inset" wouldn't receive any events at all. However,
     # there is a GLMakie bug where events do go to the inset when the figure is

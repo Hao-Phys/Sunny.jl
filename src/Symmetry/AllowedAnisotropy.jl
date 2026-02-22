@@ -4,8 +4,8 @@ function colspace(A; atol::Float64)
     m, n = size(A, 1), size(A, 2)
     (m == 0 || n == 0) && return A
     SVD = svd(A)
-    indices = findall(>(atol), SVD.S)
-    return copy(SVD.U[:, indices])
+    inds = findall(>(atol), SVD.S)
+    return copy(SVD.U[:, inds])
 end
 
 
@@ -25,11 +25,11 @@ function is_stevens_expansion_valid(cryst, i, b)
     c2 = (N == 5) ? b : zeros(5)
     c4 = (N == 9) ? b : zeros(9)
     c6 = (N == 13) ? b : zeros(13)
-    stvexp = StevensExpansion(6, c0, c2, c4, c6)
+    stvexp = StevensExpansion(c0, c2, c4, c6)
     return is_anisotropy_valid(cryst, i, stvexp)
 end
 
-function basis_for_symmetry_allowed_anisotropies(cryst::Crystal, i::Int; k::Int, R_global::Mat3, atol::Float64)
+function basis_for_symmetry_allowed_anisotropies(cryst::Crystal, i::Int; k::Int, R_global::Mat3, tol::Float64)
     # The symmetry operations for the point group at atom i.
     symops = symmetries_for_pointgroup_of_atom(cryst, i)
 
@@ -80,23 +80,23 @@ function basis_for_symmetry_allowed_anisotropies(cryst::Crystal, i::Int; k::Int,
     # an over-complete set of symmetry-allowed operators that are guaranteed to
     # be Hermitian. Create a widened real matrix from these two parts, and
     # eliminate linearly-dependent vectors from the column space.
-    B = colspace(hcat(real(B), imag(B)); atol)
+    B = colspace(hcat(real(B), imag(B)); atol=tol)
 
     # Find linear combination of columns that sparsifies B
-    B = sparsify_columns(B; atol)
+    B = sparsify_columns(B; atol=tol)
 
     # Scale each column to make the final expression prettier
     return map(eachcol(B)) do b
         b /= argmax(abs, b)
-        if any(x -> atol < abs(x) < sqrt(atol), b)
-            @info """Found a very small but nonzero expansion coefficient.
-                        This may indicate a slightly misaligned reference frame."""
+        if any(x -> tol < abs(x) < sqrt(tol), b)
+            @info "Found a very small but nonzero expansion coefficient. \n
+                   This may indicate a slightly misaligned reference frame."
         end
 
         # Magnify by up to 60× if it makes all coefficients integer
-        denoms = denominator.(rationalize.(b; tol=atol))
+        denoms = denominator.(rationalize.(b; tol))
         if all(<=(60), denoms)
-            factor = lcm(denominator.(rationalize.(b; tol=atol)))
+            factor = lcm(denominator.(rationalize.(b; tol)))
             if factor <= 60
                 b .*= factor
             end
@@ -163,19 +163,19 @@ function suggest_frame_for_atom(cryst::Crystal, i::Int)
             n ≈ Vec3(0,0,1) && return 0
             n ≈ Vec3(1,0,0) && return 1
             n ≈ Vec3(0,1,0) && return 2
-        
+
             # Look for [1,1,1] axis
             n ≈ Vec3(1,1,1)/√3 && return 3
-        
+
             # Look for [±1,±1,±1] axis
             abs.(n) ≈ Vec3(1,1,1)/√3 && return 4
-        
+
             # Try to minimize the number of zeros, thus preferring axes in the
             # (x,y) plane, etc.
             return 10 * count(n_i -> abs(n_i) > 1e-12, n)
         end
     end
-    
+
     z_dir = select_axis(axes_counts)
 
     # Collect all symmetry axes orthogonal to the primary axis, along with their
@@ -183,7 +183,7 @@ function suggest_frame_for_atom(cryst::Crystal, i::Int)
     orthogonal_axes_counts = filter(x -> abs(x[1]⋅z_dir) < 1e-12, axes_counts)
 
     if isempty(orthogonal_axes_counts)
-        @info "Could not find a symmetry axis orthogonal to $(fractional_vec3_to_string(z_dir))."
+        @info "Could not find a symmetry axis orthogonal to $(vec3_to_string(z_dir))."
         x_dir = (z_dir ≈ Vec3(1,0,0)) ? Vec3(0,0,1) : Vec3(1,0,0)
         x_dir = normalize(x_dir - (x_dir⋅z_dir)*z_dir)
     else

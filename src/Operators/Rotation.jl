@@ -10,14 +10,16 @@ function angle_between_vectors(u, v)
 end
 
 # Returns that smallest rotation matrix R such that `R u = v` where u and v are
-# the normalized input vectors. If `u = v` then `R = I` and if `u = -v` then R
+# the input vectors, normalized. If `u = v` then `R = I` and if `u = -v` then R
 # is a rotation by π about an arbitrary axis perpendicular to u and v.
 function rotation_between_vectors(u, v)
+    @assert !iszero(u) && !iszero(v)
+
     u, v = normalize.((u, v))
     axis = u × v
     θ = angle_between_vectors(u, v)
 
-    if iszero(norm(axis))
+    if iszero(axis)
         # Need to find an arbitrary axis that is orthogonal to u and v. First,
         # find a normalized vector w such that w⋅u ≠ ±1.
         _, i = findmin(abs.(u))
@@ -30,12 +32,13 @@ function rotation_between_vectors(u, v)
     return R
 end
 
-# Magnitude of axis n is ignored. Angle θ in radians. By Rodrigues formula, is
+# Magnitude of axis is ignored. Angle θ in radians. By Rodrigues formula, is
 # equivalently written `I + s K + (1-c) K²`, with `K = [0 -z y; z 0 -x; -y x 0]`
-# involving `s, c = sincos(θ)` and `x, y, z = normalize(n)`.
-function axis_angle_to_matrix(n, θ)
-    @assert !iszero(norm(n))
-    x, y, z = normalize(n)
+# involving `s, c = sincos(θ)` and `x, y, z = normalize(axis)`.
+function axis_angle_to_matrix(axis, θ)
+    @assert !iszero(axis)
+
+    x, y, z = normalize(axis)
     s, c = sincos(θ)
     t = 1 - c
     return SA[t*x*x+c    t*x*y-z*s  t*x*z+y*s
@@ -43,6 +46,9 @@ function axis_angle_to_matrix(n, θ)
               t*x*z-y*s  t*y*z+x*s  t*z*z+c]
 end
 
+# Returns an axis-angle pair (θ, n) for the pure 3×3 rotation matrix R. The
+# angle θ ∈ [0, π] represents a clockwise rotation about the unit vector n.
+# Inverse to the function axis_angle_to_matrix.
 function matrix_to_axis_angle(R::Mat3)
     @assert R'*R ≈ I   "Matrix not orthogonal"
     @assert det(R) ≈ 1 "Matrix includes reflection"
@@ -50,7 +56,9 @@ function matrix_to_axis_angle(R::Mat3)
     # Formula derived by Mike Day, Insomniac Games, and posted online as
     # "Converting a Rotation Matrix to a Quaternion".
     # https://d3cw3dd2w32x2b.cloudfront.net/wp-content/uploads/2015/01/matrix-to-quat.pdf
-    (m00, m10, m20, m01, m11, m21, m02, m12, m22) = R[:]
+    # Relative to that note, we perform a transpose on R because our convention
+    # is that R rotates a vector v by right-multiplication, R*v
+    (m00, m10, m20, m01, m11, m21, m02, m12, m22) = R'[:]
     if (m22 < 0)
         if (m00 > m11)
             t = 1 + m00 - m11 - m22
@@ -68,13 +76,21 @@ function matrix_to_axis_angle(R::Mat3)
             q = SA[m12-m21, m20-m02, m01-m10, t]
         end
     end
-
-    # Construct a unit quaternion
     q *= 0.5 / sqrt(t)
 
+    # Quaternions q and -q represent the same rotation. Make an opinionated but
+    # unambiguous choice: Take q[4] positive or, if it is zero, look at axes
+    # components sequentially. Zero q[4] corresponds to a rotation by θ = ± π,
+    # at which point the axis-angle representation is singular (+π and -π are
+    # the same rotation). The tuple comparison below is lexical, left-to-right.
+    if (q[4], q[1], q[2], q[3]) < (0, 0, 0, 0)
+        q = -q
+    end
+    @assert q[4] ≥ 0
+
     # Angle of rotation
-    q4 = max(min(q[4], 1.0), -1.0)
-    θ = 2acos(q4)
+    θ = 2acos(min(q[4], 1.0))
+    @assert 0 ≤ θ ≤ π
 
     if θ < 1e-12
         # Axis is ill-defined for the identity matrix, but we don't want NaNs
@@ -83,10 +99,6 @@ function matrix_to_axis_angle(R::Mat3)
         # Standard conversion from a unit quaternion q to an axis-angle
         n = SA[q[1], q[2], q[3]] / sqrt(1 - q[4]^2)
     end
-
-    # Negate the axis to invert the rotation, i.e., transpose R. This is
-    # necessary to view R as right-multiplying a column vector.
-    n = -n
 
     return (n, θ)
 end

@@ -4,7 +4,7 @@ function swt_hamiltonian_dipole!(H::Matrix{ComplexF64}, swt::SpinWaveTheory, q_r
     (; local_rotations, stevens_coefs, sqrtS) = data
     (; extfield, gs) = sys
 
-    L = nbands(swt) 
+    L = nbands(swt)
     @assert size(H) == (2L, 2L)
 
     # Initialize Hamiltonian buffer 
@@ -36,7 +36,10 @@ function swt_hamiltonian_dipole!(H::Matrix{ComplexF64}, swt::SpinWaveTheory, q_r
         for coupling in int.pair
             (; isculled, bond) = coupling
             isculled && break
-            (; i, j) = bond
+
+            @assert i == bond.i
+            j = bond.j
+
             phase = exp(2π*im * dot(q_reshaped, bond.n)) # Phase associated with periodic wrapping
 
             si = sqrtS[i]^2
@@ -97,23 +100,23 @@ function swt_hamiltonian_dipole!(H::Matrix{ComplexF64}, swt::SpinWaveTheory, q_r
 
     # Add long-range dipole-dipole
     if !isnothing(sys.ewald)
+        (; demag, μ0_μB², A) = sys.ewald
         Rs = local_rotations
 
-        # Interaction matrix for wavevector q
-        A = precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), q_reshaped) * sys.ewald.μ0_μB²
-        A = reshape(A, L, L)
-
         # Interaction matrix for wavevector (0,0,0). It could be recalculated as:
-        # precompute_dipole_ewald(sys.crystal, (1,1,1)) * sys.ewald.μ0_μB²
-        A0 = sys.ewald.A
-        A0 = reshape(A0, L, L)
+        # precompute_dipole_ewald(sys.crystal, (1,1,1), demag) * μ0_μB²
+        A0 = reshape(A, L, L)
+
+        # Interaction matrix for wavevector q
+        Aq = precompute_dipole_ewald_at_wavevector(sys.crystal, (1,1,1), demag, q_reshaped) * μ0_μB²
+        Aq = reshape(Aq, L, L)
 
         # Loop over sublattice pairs
         for i in 1:L, j in 1:L
             # An ordered pair of magnetic moments contribute (μᵢ A μⱼ)/2 to the
             # energy. A symmetric contribution will appear for the bond reversal
             # (i, j) → (j, i).  Note that μ = -μB g S.
-            J = gs[i]' * A[i, j] * gs[j] / 2
+            J = gs[i]' * Aq[i, j] * gs[j] / 2
             J0 = gs[i]' * A0[i, j] * gs[j] / 2
 
             # Perform same transformation as appears in usual bilinear exchange.
@@ -193,22 +196,24 @@ function multiply_by_hamiltonian_dipole!(y::AbstractMatrix{ComplexF64}, x::Abstr
     end
 
     # Pair interactions 
-    for ints in sys.interactions_union
+    for (i, int) in enumerate(sys.interactions_union)
 
-        # Bilinear exchange
-        for coupling in ints.pair
+        for coupling in int.pair
             (; isculled, bond) = coupling
             isculled && break
-            (; i, j) = bond
 
-            si = sqrtS[i]^2
-            sj = sqrtS[j]^2
-            sij = sqrtS[i] * sqrtS[j]
+            @assert i == bond.i
+            j = bond.j
 
             map!(phases, qs_reshaped) do q
                 cis(2π*dot(q, bond.n))
             end
 
+            si = sqrtS[i]^2
+            sj = sqrtS[j]^2
+            sij = sqrtS[i] * sqrtS[j]
+
+            # Bilinear exchange
             if !iszero(coupling.bilin)
                 J = coupling.bilin  # This is Rij in previous notation (transformed exchange matrix)
 

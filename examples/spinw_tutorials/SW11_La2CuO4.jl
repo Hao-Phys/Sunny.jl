@@ -13,11 +13,11 @@ using Sunny, GLMakie
 # selected arbitrarily.
 
 units = Units(:meV, :angstrom)
-latvecs = lattice_vectors(1, 1, 10, 90, 90, 90)
+latvecs = lattice_vectors(3.85, 3.85, 12.25, 90, 90, 90)
 positions = [[0, 0, 0]]
 types = ["Cu"]
 cryst = Crystal(latvecs, positions, 139; types)
-view_crystal(cryst; ndims=2)
+view_crystal(cryst)
 
 # Build a spin system using the exchange parameters from [R. Coldea, Phys. Rev.
 # Lett. **86**, 5377 (2001)](https://doi.org/10.1103/PhysRevLett.86.5377).
@@ -31,11 +31,11 @@ set_exchange!(sys, J-Jc/2, Bond(1, 1, [1, 0, 0]))
 set_exchange!(sys, Jp-Jc/4, Bond(1, 1, [1, 1, 0]))
 set_exchange!(sys, Jpp, Bond(1, 1, [2, 0, 0]))
 
-# Energy minimization yields the expected Néel order
+# Energy minimization yields the expected Néel order within each plane.
 
 randomize_spins!(sys)
 minimize_energy!(sys)
-plot_spins(sys; ndims=2)
+plot_spins(sys)
 
 # Plot the spin wave spectrum for a path through ``𝐪``-space. Apply a manual
 # "quantum correction" that adjusts energy scale by the factor 1.18.
@@ -52,4 +52,4 @@ plot_intensities(res; units)
 # Plot instantaneous itensities, integrated over ω.
 
 res = intensities_static(swt, path)
-plot_intensities(res; colorrange=(0,20), units)
+plot_intensities(res; ylims=(0, 20), units)

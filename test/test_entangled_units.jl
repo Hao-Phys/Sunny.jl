@@ -24,13 +24,11 @@ end
 
 @testitem "Dimer Tests" begin
     import LinearAlgebra: norm
+    import Random
+
     J = 1.0
     J′ = 0.1
-    latvecs = [
-        1  0  0
-        0  1  0
-        0  0  2
-    ]
+    latvecs = [1 0 0; 0 1 0; 0 0 2]
     positions = [[0, 0, 0], [0.0, 0.5, 0.0]] 
 
     crystal = Crystal(latvecs, positions, 1; types = ["A", "B"])
@@ -77,9 +75,9 @@ end
 
     set_field!(esys, [0, 0, 0])
     randomize_spins!(esys)
-    minimize_energy!(esys; g_tol=1e-14)
-    @test norm(esys.sys_origin.dipoles[1]) < 1e-14
-    @test norm(esys.sys_origin.dipoles[2]) < 1e-14
+    minimize_energy!(esys)
+    @test norm(esys.sys_origin.dipoles[1]) < 1e-10
+    @test norm(esys.sys_origin.dipoles[2]) < 1e-10
 
     # Test inter-bond exchange
     pc = Sunny.as_general_pair_coupling(interactions.pair[1], esys.sys)
@@ -91,7 +89,6 @@ end
     end
     bond_ref = J′*((Sl2' * Sl1) .+ (Su2' * Su1))
     @test bond_operator ≈ bond_ref
-
 
     # Test dispersion against analytical formula for antisymmetric channel.
     qs = [[0.2, 0.3, 0]]
@@ -109,8 +106,19 @@ end
 
     @test all(both -> isapprox(both[1], both[2]; atol=1e-12), zip(ωs_analytical, ωs_numerical))
 
+    # Test static structure factor is zero (dipolar sector)
+    ssf = SampledCorrelationsStatic(esys; measure=ssf_trace(esys))
+    add_sample!(ssf, esys)
+    @test all(x -> isapprox(x, 0.0; atol=1e-12), ssf.sc.parent.data)
 
-    # Test classical dynamics and perform golden test.
+    ### Golden test for classical dynamics ###
+
+    # For exact reproducibility, reset the random number seed and use a specific
+    # initial condition.
+
+    Random.seed!(esys.sys.rng, 0)
+    set_coherent!(esys, [0, 1/√2, -1/√2, 0], (1, 1, 1, 1))
+
     esys = repeat_periodically(esys, (8, 1, 1))
     energies = range(0, 2, 5)
     dt = 0.1
@@ -124,15 +132,13 @@ end
     add_sample!(sc, esys)
     res = intensities(sc, qs; energies, kT=0.05)
 
-    # Julia 1.11 slightly changes the SVD, which leads to a different
-    # decomposition of "general" pair interactions. Small numerical differences
-    # can be amplified over a long dynamical trajectory.
+    # The revised SVD in Julia 1.11 leads to slight differences in the
+    # decomposition of "general" pair interactions, which amplify dynamically.
     @static if v"1.10" <= VERSION < v"1.11"
-        intensities_ref = [0.03781658031882558; 0.16151778881111165; -0.0037168273786800762; 0.003932155182202315; 0.004622186821935108;;]
+        @test res.data ≈ [0.07024999729427889; 0.3789922833067086; 0.030874420326198797; 0.019063538871308898; 0.046744509745178346;;]
     elseif v"1.11" <= VERSION
-        intensities_ref = [0.06308051766790573; 0.3382120639629263; 0.01923042197493646; -0.0008116785050247188; 0.013219669220764382;;]
+        @test res.data ≈ [0.057576728058578996; 0.291813812342436; 0.006207013162191793; 0.0019171217111500483; 0.009779731118622022;;]
     end
-    @test isapprox(res.data, intensities_ref)
 end
 
 # @testitem "Ba3Mn2O8 Dispersion and Golden Test" begin

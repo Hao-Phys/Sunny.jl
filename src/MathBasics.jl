@@ -3,6 +3,7 @@ const Vec3 = SVector{3, Float64}
 const Vec5 = SVector{5, Float64}
 const Mat3 = SMatrix{3, 3, Float64, 9}
 const Mat5 = SMatrix{5, 5, Float64, 25}
+const CMat3 = SMatrix{3, 3, ComplexF64, 9}
 const CVec{N} = SVector{N, ComplexF64}
 const HermitianC64 = Hermitian{ComplexF64, Matrix{ComplexF64}}
 
@@ -31,6 +32,32 @@ function diffnorm2(a, b)
     return acc
 end
 
+# Calculates norm(a - b, Inf) without allocating
+function maxdiff(a, b)
+    @assert size(a) == size(b) "Non-matching dimensions"
+    ret = 0.0
+    for i in eachindex(a)
+        ret = max(abs(a[i] - b[i]), ret)
+    end
+    return ret
+end
+
+function is_integer(x; tol)
+    return abs(x - round(x)) < tol
+end
+
+function all_integer(xs; tol)
+    return all(is_integer(x; tol) for x in xs)
+end
+
+# Periodic variant of Base.isapprox. When comparing lattice quantities like
+# positions or bonds, prefer is_periodic_copy because it works element-wise.
+function isapprox_mod1(x::AbstractArray, y::AbstractArray; opts...)
+    @assert size(x) == size(y) "Non-matching dimensions"
+    Δ = @. mod(x - y + 0.5, 1) - 0.5
+    return isapprox(Δ, zero(Δ); opts...)
+end
+
 # Project `v` onto space perpendicular to `n`
 @inline proj(v, n) = v - n * ((n' * v) / norm2(n))
 
@@ -49,15 +76,61 @@ function findfirstval(f, a)
     return isnothing(i) ? nothing : a[i]
 end
 
-# Let F be the matrix with 1's on the antidiagonal. Then AF (or FA) is the
-# matrix A with columns (or rows) reversed. If (Q, R) = AF is the QR
-# decomposition of AF, then (QF, FRF) is the QL decomposition of A.
-function ql_slow(A)
-    AF = reduce(hcat, reverse(eachcol(A)))
-    Q, R = qr(AF)
-    # TODO: Perform these reversals in-place
-    QF = reduce(hcat, reverse(eachcol(collect(Q))))
-    RF = reduce(hcat, reverse(eachcol(collect(R))))
-    FRF = reduce(vcat, reverse(transpose.(eachrow(collect(RF)))))
-    return QF, FRF
+# Returns the QL decomposition `Q, L = ql(A)` satisfying `Q * L ≈ A` with Q
+# orthogonal and L lower-triangular. 
+#
+# Let (Q, R) be the usual QR decomposition of A. Let F be the matrix with ones
+# on the antidiagonal. Then AF is the matrix A with columns reversed and FRF is
+# the matrix R with all elements reversed. With this notation, the return value
+# (; Q=QF, L=FRF) gives the desired QL decomposition of A.
+function ql(A)
+    AF = reverse!(Matrix(A); dims=2)
+    (; Q, R) = qr!(AF)
+    QF = reverse!(Matrix(Q); dims=2)
+    FRF = reverse!(R)
+    return (; Q=QF, L=FRF)
 end
+
+# flatten_to_vec([1, ([2, 3], 4, [5, 6])]) == [1, 2, 3, 4, 5, 6]
+flatten_to_vec(x::Number) = [x]
+flatten_to_vec(x::Array{<: Number}) = vec(x)
+flatten_to_vec(xs) = reduce(vcat, (flatten_to_vec(x) for x in xs))
+
+
+# Rescale v such that sum(v) = 1
+fractionalize(v) = iszero(v) ? one.(v) / length(v) : v ./ sum(v)
+
+# Student's t-distribution, but normalized to 1 at x=0. Converges to exp(-x²/2)
+# when ν → ∞.
+function studentt_kernel(x::Real, ν::Real)
+    ν > 0 || error("ν must be positive")
+    if isinf(ν)
+        return exp(-x^2/2)
+    else
+        return exp(-((ν+1)/2) * log1p(x^2/ν))
+    end
+end
+
+"""
+    softplus(x; β=1) = log(1 + exp(β x)) / β
+
+Smooth approximation to `max(x, 0)`, exact in the limit `β = Inf`.
+"""
+function softplus(x; β=1)
+    β > 0 || error("β must be positive")
+    t = β*x
+    if t > 40
+        return x                 # log(1+exp(t)) ~ t
+    elseif t < -40
+        return exp(t) / β        # log(1+exp(t)) ~ exp(t)
+    else
+        return log1p(exp(t)) / β
+    end
+end
+
+"""
+    softcap(x, cap; β=1) = cap - softplus(cap - x; β)
+
+Smooth approximation to `min(x, cap)`, exact in the limit `β = Inf`.
+"""
+softcap(x, cap; β=1) = cap - softplus(cap - x; β)
