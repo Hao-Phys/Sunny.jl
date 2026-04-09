@@ -181,13 +181,14 @@ function modified_lanczos(npt::NonPerturbativeTheory, q, niters::Int; single_par
     return as, bs, norm2s
 end
 
-# Caculate the (x, x), (y, y), (z, z) and (x+y, x+y), (y+z, y+z), (z+x, z+x) components of the dynamical spin structure factor using the continued fraction method.
-function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
-    as, bs, norm2s = modified_lanczos(npt, q, niters; single_particle_correction, opts...)
-    (; swt) = npt
-
+# Calculate the (x,x), (y,y), (z,z) and (x+y,x+y), (y+z,y+z), (z+x,z+x) components of the
+# dynamical spin structure factor using the continued fraction method.
+# `as`, `bs`, `norm2s` are Lanczos coefficients computed from `modified_lanczos`.
+# WARNING: Currently only supports correlation functions between spin operators (num_obs = 3).
+function dssf_continued_fraction(as, bs, norm2s, ωs, η::Float64)
+    niters = size(as, 1)
+    num_obs = 3
     ret_buff = zeros(length(ωs), 6)
-    num_obs = num_observables(swt.measure)
     for i in 1:num_obs
         as_i = view(as, :, i)
         bs_i = view(bs, :, i)
@@ -199,7 +200,7 @@ function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64
                 G = z - as_i[j] - A
             end
             G = inv(G) * norm2s[i]
-            ret_buff[iω, i] = - imag(G) / π
+            ret_buff[iω, i] = -imag(G) / π
         end
         # Off-diagonal elements
         as_i_plus = view(as, :, i+3)
@@ -212,23 +213,31 @@ function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64
                 G = z - as_i_plus[j] - A
             end
             G = inv(G) * norm2s[i+3]
-            ret_buff[iω, i+3] = - imag(G) / π
+            ret_buff[iω, i+3] = -imag(G) / π
         end
     end
-
     return ret_buff
 end
 
-function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
-    ret_buff = dssf_continued_fraction(npt, q, ωs, η, niters; single_particle_correction, opts...)
-    # Apply the neutron polarization factor
-    (; swt) = npt
-    cryst = orig_crystal(swt.sys)
-    q_global = cryst.recipvecs * q
-    q2 = norm2(q_global)
+# Calculate the (x,x), (y,y), (z,z) and (x+y,x+y), (y+z,y+z), (z+x,z+x) components of the
+# dynamical spin structure factor using the continued fraction method.
+# Lanczos coefficients are computed internally from `modified_lanczos`.
+# WARNING: Currently only supports correlation functions between spin operators (num_obs = 3).
+function dssf_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
+    as, bs, norm2s = modified_lanczos(npt, q, niters; single_particle_correction, opts...)
+    return dssf_continued_fraction(as, bs, norm2s, ωs, η)
+end
 
+# Calculate the neutron scattering intensities from Lanczos coefficients computed from
+# `modified_lanczos`, by applying the neutron polarization factor to the dynamical spin
+# structure factor. `q_global` is the momentum transfer vector in global Cartesian coordinates.
+# WARNING: Currently only supports correlation functions between spin operators (num_obs = 3).
+function intensities_continued_fraction(as, bs, norm2s, q_global, ωs, η::Float64)
+    ret_buff = dssf_continued_fraction(as, bs, norm2s, ωs, η)
+    # Apply the neutron polarization factor
+    q2 = norm2(q_global)
+    num_obs = 3
     ret = zeros(length(ωs))
-    num_obs = num_observables(swt.measure)
     if q2 < 1e-6
         # Later we may add the 2/3 factor to be consistent with the Sunny main
         for i in 1:num_obs
@@ -241,8 +250,18 @@ function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::
             @. ret -= (ret_buff[:, i+3] - ret_buff[:, i] - ret_buff[:, mod1(i+1, 3)]) * q_global[i] * q_global[mod1(i+1, 3)] / q2
         end
     end
-
     return ret
+end
+
+# Calculate the neutron scattering intensities using the continued fraction method.
+# Lanczos coefficients are computed internally from `modified_lanczos`.
+# WARNING: Currently only supports correlation functions between spin operators (num_obs = 3).
+function intensities_continued_fraction(npt::NonPerturbativeTheory, q, ωs, η::Float64, niters::Int; single_particle_correction::Bool=true, opts...)
+    (; swt) = npt
+    as, bs, norm2s = modified_lanczos(npt, q, niters; single_particle_correction, opts...)
+    cryst = orig_crystal(swt.sys)
+    q_global = cryst.recipvecs * q
+    return intensities_continued_fraction(as, bs, norm2s, q_global, ωs, η)
 end
 
 # Diagonalize the many-body Hamiltonian at zero center-of-mass momentum. Returns to the renormalized vacuum state.
