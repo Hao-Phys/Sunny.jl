@@ -314,3 +314,252 @@ function q_space_path_npt(npt::NonPerturbativeTheory, qs; labels=nothing)
     xticks = (markers, labels)
     return QPath(path, xticks)
 end
+
+"""
+    q_space_polygon_npt(npt::NonPerturbativeTheory, qs; plane_axis=3, atol=1e-12)
+
+Construct a set of NPT-compatible q-points inside a closed polygonal region.
+
+The input `qs` are polygon vertices in the reciprocal lattice units of the
+original crystal. The first and last vertices must close the polygon. Each
+vertex is first snapped to the nearest available NPT momentum using
+`to_reshaped_q_npt`.
+
+The polygon-inclusion test is performed in reshaped reciprocal lattice units.
+By default, `plane_axis=3`, so the polygon is assumed to live in the first two
+reshaped coordinates, with the third coordinate fixed.
+
+Returns a `QPoints` object whose `qs` are expressed in the reciprocal lattice
+units of the original crystal.
+"""
+function q_space_polygon_npt(npt::NonPerturbativeTheory, qs; plane_axis::Int=3, atol::Float64=1e-12)
+    @assert 1 ≤ plane_axis ≤ 3 "`plane_axis` must be 1, 2, or 3."
+    @assert length(qs) ≥ 4 "A closed polygon requires at least four vertices, including the repeated final vertex."
+
+    (; clustersize) = npt
+    sys = npt.swt.sys
+
+    # Snap the user-specified polygon vertices to the NPT momentum grid.
+    #
+    # The input vertices are arbitrary q-points in the original crystal RLU.
+    # `to_reshaped_q_npt` converts each one to reshaped RLU, folds it into the
+    # first reshaped reciprocal unit cell, snaps it to the nearest finite-size
+    # momentum in `npt.qs`, and then restores the corresponding magnetic
+    # reciprocal-lattice image.
+    reshaped_q_res = [to_reshaped_q_npt(npt, q) for q in qs]
+    vertices_closed = [res.q_reshaped_closest for res in reshaped_q_res]
+
+    # Check that the polygon is closed after NPT snapping.
+    #
+    # This is the relevant closure condition because all later geometric tests
+    # are performed using the snapped vertices in reshaped RLU.
+    if norm(vertices_closed[1] - vertices_closed[end]) > atol
+        q_start = to_original_rlu(sys, vertices_closed[1])
+        q_end = to_original_rlu(sys, vertices_closed[end])
+        error("The polygon is not closed after snapping to the NPT grid. " *
+              "The snapped first point is $q_start, while the snapped last point is $q_end.")
+    end
+
+    # Remove the repeated final vertex. The polygon-inclusion helper expects
+    # each distinct vertex only once; it closes the final edge internally.
+    vertices = vertices_closed[1:end-1]
+
+    # The polygon is assumed to lie in a coordinate plane of the reshaped
+    # reciprocal coordinates. For example, `plane_axis = 3` means the polygon
+    # lies in the q1-q2 plane with fixed q3.
+    plane_coord = vertices[1][plane_axis]
+    for v in vertices
+        if abs(v[plane_axis] - plane_coord) > atol
+            error("The snapped polygon vertices are not coplanar with fixed coordinate " *
+                  "`plane_axis = $plane_axis`. Got coordinates " *
+                  "$(getindex.(vertices, plane_axis)).")
+        end
+    end
+
+    # These are the two coordinate axes used for the 2D polygon test.
+    # For `plane_axis = 3`, this gives axes2 = (1, 2).
+    axes2 = Tuple(i for i in 1:3 if i != plane_axis)
+
+    # Convert the 3D reshaped-RLU vertices into 2D coordinates in the polygon
+    # plane. The helper functions below only solve a 2D geometry problem.
+    polygon2 = [(v[axes2[1]], v[axes2[2]]) for v in vertices]
+
+    # Determine the magnetic reciprocal-lattice images that can overlap the
+    # polygon bounding box. This matters because the snapped polygon vertices
+    # may lie in an extended-zone image, while `npt.qs` itself stores only the
+    # folded representatives in [0,1)^3.
+    mins = ntuple(a -> minimum(v[a] for v in vertices), 3)
+    maxs = ntuple(a -> maximum(v[a] for v in vertices), 3)
+
+    G_ranges = ntuple(a -> (floor(Int, mins[a]) - 1):(ceil(Int, maxs[a]) + 1), 3)
+
+    qs_out = Vec3[]
+
+    for iq in CartesianIndices(npt.qs)
+        q_base = npt.qs[iq]
+
+        for n1 in G_ranges[1], n2 in G_ranges[2], n3 in G_ranges[3]
+            G = Vec3([n1, n2, n3])
+            q_reshaped = q_base + G
+
+            # Restrict to the same coordinate plane as the polygon.
+            if abs(q_reshaped[plane_axis] - plane_coord) > atol
+                continue
+            end
+
+            # Project this candidate q-point to the 2D polygon coordinates.
+            p = (q_reshaped[axes2[1]], q_reshaped[axes2[2]])
+
+            # Keep the point if it lies inside the polygon or exactly on its
+            # boundary. Boundary inclusion is intentional: a q-point on a
+            # polygon edge should be part of the selected polygonal region.
+            if _point_in_polygon_or_on_boundary(p, polygon2; atol=atol)
+                q = to_original_rlu(sys, q_reshaped)
+                push!(qs_out, q)
+            end
+        end
+    end
+
+    # Deterministic ordering. This is not a path order; it is just a stable
+    # lexicographic ordering of the selected q-points in original RLU.
+    sort!(qs_out, by = q -> (q[1], q[2], q[3]))
+
+    return QPoints(qs_out)
+end
+
+
+function _point_in_polygon_or_on_boundary(p, polygon; atol::Float64=1e-12)
+    n = length(polygon)
+    @assert n ≥ 3 "A polygon requires at least three distinct vertices."
+
+    # This helper answers the purely geometric question:
+    #
+    #     Is the 2D point `p` inside the polygon, including its boundary?
+    #
+    # It does not know anything about Sunny, reciprocal lattices, or the NPT
+    # grid. By the time this function is called, both `p` and `polygon` have
+    # already been projected to ordinary 2D coordinates in the chosen
+    # reshaped-RLU plane.
+
+    # First check whether `p` lies exactly on any polygon edge.
+    #
+    # The usual ray-crossing algorithm is meant for deciding strictly inside
+    # versus outside. Boundary cases are delicate: a point exactly on an edge
+    # or exactly at a vertex can be counted inconsistently depending on the
+    # direction of the ray and floating-point roundoff.
+    #
+    # For the q-grid selection problem, we want the convention
+    #
+    #     polygonal region = interior + boundary.
+    #
+    # Therefore boundary points are accepted explicitly before running the
+    # inside/outside test.
+    for i in 1:n
+        a = polygon[i]
+        b = polygon[i == n ? 1 : i + 1]
+        if _point_on_segment(p, a, b; atol=atol)
+            return true
+        end
+    end
+
+    # Ray-crossing test for the remaining non-boundary points.
+    #
+    # Imagine drawing a horizontal ray starting from `p` and going to the
+    # right. Count how many times this ray crosses the polygon boundary.
+    #
+    #     odd number of crossings  -> inside
+    #     even number of crossings -> outside
+    #
+    # Instead of explicitly counting crossings, we flip the Boolean `inside`
+    # each time the ray crosses an edge.
+    inside = false
+    x, y = p
+
+    j = n
+    for i in 1:n
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+
+        # The horizontal ray at height `y` can cross this edge only if the two
+        # endpoints lie on opposite sides of the horizontal line through `p`.
+        #
+        # The strict comparisons avoid double-counting vertices. Boundary
+        # cases have already been handled above.
+        crosses = ((yi > y) != (yj > y))
+
+        if crosses
+            # Compute the x-coordinate where this polygon edge intersects the
+            # horizontal line passing through `p`.
+            x_intersect = xi + (y - yi) * (xj - xi) / (yj - yi)
+
+            # If the intersection lies to the right of `p`, the ray crosses
+            # this edge, so flip inside/outside.
+            if x < x_intersect
+                inside = !inside
+            end
+        end
+
+        j = i
+    end
+
+    return inside
+end
+
+
+function _point_on_segment(p, a, b; atol::Float64=1e-12)
+    x, y = p
+    x1, y1 = a
+    x2, y2 = b
+
+    # This helper checks whether the 2D point `p` lies on the finite line
+    # segment from endpoint `a` to endpoint `b`.
+    #
+    # It performs two tests:
+    #
+    #   1. Collinearity:
+    #        `p`, `a`, and `b` must lie on the same infinite line.
+    #
+    #   2. Between-endpoints:
+    #        once collinearity is satisfied, `p` must lie between `a` and `b`,
+    #        not beyond either endpoint.
+    #
+    # The tolerance `atol` is used because the q-points and snapped polygon
+    # vertices are floating-point numbers.
+
+    dx = x2 - x1
+    dy = y2 - y1
+
+    # Test 1: collinearity.
+    #
+    # The 2D cross product between the vectors
+    #
+    #     a -> p  = (x - x1, y - y1)
+    #     a -> b  = (dx, dy)
+    #
+    # should vanish if the two vectors are parallel. A nonzero value means `p`
+    # is not on the same infinite line as the segment.
+    cross = (x - x1) * dy - (y - y1) * dx
+    if abs(cross) > atol
+        return false
+    end
+
+    # Test 2: between-endpoints.
+    #
+    # The dot product with the segment direction tells us where `p` sits along
+    # the line from `a` to `b`.
+    #
+    #     dotprod < 0      -> p is behind a
+    #     dotprod > len2   -> p is beyond b
+    #     otherwise        -> p lies between a and b
+    dotprod = (x - x1) * dx + (y - y1) * dy
+    if dotprod < -atol
+        return false
+    end
+
+    len2 = dx^2 + dy^2
+    if dotprod - len2 > atol
+        return false
+    end
+
+    return true
+end
