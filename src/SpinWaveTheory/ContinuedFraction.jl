@@ -90,7 +90,12 @@ function continued_fraction_initial_states(npt::NonPerturbativeTheory, q, q_inde
             for i in 1:Nm
                 for μ in 1:num_obs
                     O = observables_localized[μ, i]
-                    f0s[is, μ] += Avec_pref[μ, i] * O[3] * (conj(vq1[i, 2])*conj(vq2[i, 1]) + conj(vq1[i, 1])*conj(vq2[i, 2]) )  / (√Nu * ζ)
+                    # The two-boson part of O⋅S comes from the longitudinal
+                    # component, Sᶻ = S - b†b, so its coefficient is -O[3]. This
+                    # matches the :SUN branch, where O[α, α] - O[N, N] = -1 for
+                    # O = Sᶻ. The sign cancels in the two-magnon continuum alone,
+                    # but fixes the interference with the one-magnon amplitude.
+                    f0s[is, μ] -= Avec_pref[μ, i] * O[3] * (conj(vq1[i, 2])*conj(vq2[i, 1]) + conj(vq1[i, 1])*conj(vq2[i, 2]) )  / (√Nu * ζ)
                 end
             end
         end
@@ -239,9 +244,10 @@ function intensities_continued_fraction(as, bs, norm2s, q_global, ωs, η::Float
     num_obs = 3
     ret = zeros(length(ωs))
     if q2 < 1e-6
-        # Later we may add the 2/3 factor to be consistent with the Sunny main
+        # As in Sunny's `ssf_perp`: the polarization factor (1 - q̂⊗q̂) averages
+        # to 2/3 in the limit q → 0
         for i in 1:num_obs
-            @. ret += ret_buff[:, i]
+            @. ret += 2/3 * ret_buff[:, i]
         end
     else
         for i in 1:num_obs
